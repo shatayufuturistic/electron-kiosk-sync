@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Update Available</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Arial', sans-serif;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: linear-gradient(135deg, #6e8efb, #a777e3);
+      color: #fff;
+      text-align: center;
+    }
+
+    h2 {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+
+    #statusText {
+      font-size: 16px;
+      margin-bottom: 20px;
+      opacity: 0.9;
+    }
+
+    .progress-container {
+      width: 80%;
+      max-width: 400px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 100px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    #progressBar {
+      height: 30px;
+      width: 0%;
+      background: #00ffcc;
+      transition: width 0.3s ease-in-out;
+    }
+
+    #progressText {
+      position: absolute;
+      width: 100%;
+      top: 50%;
+      left: 0;
+      transform: translateY(-50%);
+      font-size: 14px;
+      font-weight: bold;
+      color: #ffffff;
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 20px;
+      padding: 12px 20px;
+      font-size: 16px;
+      font-weight: bold;
+      background: #ff5f6d;
+      background: linear-gradient(135deg, #ff9966, #ff5e62);
+      color: white;
+      border: none;
+      border-radius: 30px;
+      cursor: pointer;
+      transition: 0.3s ease;
+      opacity: 0.8;
+      box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+      display: none;
+    }
+
+    .btn:hover {
+      opacity: 1;
+      transform: scale(1.05);
+    }
+
+    .btn i {
+      margin-right: 10px;
+      font-size: 18px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h2>New Update Available</h2>
+  <p id="statusText">Downloading update...</p>
+
+  <div class="progress-container">
+    <div id="progressBar"></div>
+    <p id="progressText">0%</p>
+      
+  </div>
+
+  <button id="quitButton" class="btn" onclick="quitApp()">
+    <i>🔄</i> Quit & Relaunch
+  </button>
+
+  <script>
+    window.electron.onDownloadProgress((progress) => {
+      const progressBar = document.getElementById('progressBar');
+      const progressText = document.getElementById('progressText');
+
+      // Update the progress bar width
+      progressBar.style.width = progress + "%";
+
+      // Update the text and move it along with the progress bar
+      progressText.innerText = progress + "%";
+    });
+
+
+    window.electron.onUpdateDownloaded(() => {
+      document.getElementById('statusText').innerText = "Download completed. Click the button below to relaunch.";
+      document.getElementById('quitButton').style.display = "flex";
+
+    });
+
+    function quitApp() {
+      window.electron.quitAndInstall();
+    }
+  </script>
+
+</body>
+
+</html>

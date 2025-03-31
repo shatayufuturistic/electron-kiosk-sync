@@ -1,0 +1,46 @@
+{
+  "name": "shatayu",
+  "version": "1.0.2",
+  "description": "Shatayu syncing software",
+  "main": "src/index.js",
+  "build": {
+    "extraResources": [
+      {
+        "from": "./.env",
+        "to": "app/.env"
+      }
+    ],    
+    "appId": "com.abhaya.shatayu.sync",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "abhaya-kumar-sahoo",
+        "repo": "Electron-Shatayu-Sync"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    }
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.777.0",
+    "aws-sdk": "^2.1692.0",
+    "axios": "^1.8.4",
+    "chokidar": "^4.0.3",
+    "dotenv": "^16.4.7",
+    "electron-log": "^5.3.3",
+    "electron-store": "^8.0.0",
+    "electron-updater": "^6.6.2",
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7"
+  },
+  "devDependencies": {
+    "electron": "35.1.1",
+    "electron-builder": "^23.6.0"
+  }
+}
