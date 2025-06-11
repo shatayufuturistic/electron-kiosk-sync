@@ -1,23 +1,41 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
-const { autoUpdater } = require('electron-updater');
-const path = require('node:path');
-const log = require('electron-log');
-const { setuplocalFileWatcher } = require("./config/config");
+// main.js
+const { app, BrowserWindow, ipcMain, Menu, MenuItem } = require("electron");
+const { autoUpdater } = require("electron-updater");
+const path = require("node:path");
+const log = require("electron-log");
+const fs = require("fs");
+const { setupLocalFileWatcher } = require("./config/config");
+const dotenv = require("dotenv");
+const Store = require("electron-store");
+const { menuTemplate } = require("./utils/menu");
+const getStore = require("./utils/localstorage");
+const envPath = path.join(process.resourcesPath, "app/.env");
+dotenv.config({ path: fs.existsSync(envPath) ? envPath : ".env" });
+const store = getStore();
 
-// Load environment variables
-log.initialize();
-const logPath = path.join(
-  "D:\\Sync\\Log",
-  'app.log'
-);
-log.transports.file.resolvePathFn = () => logPath;
-log.transports.file.level = 'info';
+let mainWindow, loaderWindow, updateWindow;
+// Initialize logging
+function initializeLogger() {
+  const env = store.get("environment");
+  if (!env) {
+    store.set("environment", "production");
+  }
+  const logPath = process.env.APP_LOG_PATH;
+  try {
+    const logDir = path.dirname(logPath);
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    log.initialize();
+    log.transports.file.resolvePathFn = () => logPath;
+    log.transports.file.level = "info";
+    log.info("Logger initialized successfully.");
+  } catch (error) {
+    console.error("Failed to initialize logger:", error);
+  }
+}
 
-let mainWindow;
-let loaderWindow;
-let updateWindow;
-
-const createLoaderWindow = () => {
+function createLoaderWindow() {
   loaderWindow = new BrowserWindow({
     width: 300,
     height: 200,
@@ -27,109 +45,145 @@ const createLoaderWindow = () => {
     resizable: false,
     show: false,
     webPreferences: {
-      nodeIntegration: false,
+      contextIsolation: true,
     },
   });
 
   loaderWindow.loadFile(path.join(__dirname, "loader.html"));
+  loaderWindow.once("ready-to-show", () => loaderWindow.show());
+}
 
-  loaderWindow.once('ready-to-show', () => {
-    loaderWindow.show();
-  });
-};
+// Function to switch environment and restart
 
-const createMainWindow = () => {
+const menu = Menu.buildFromTemplate(menuTemplate);
+
+function createMainWindow() {
   mainWindow = new BrowserWindow({
-    width:1280,
-    height:800,
+    width: 1280,
+    height: 800,
+    show: false,
     webPreferences: {
       contextIsolation: true,
-      nodeIntegration: false,
     },
   });
+  const env = store.get("environment");
+  const FRONTEND_URL =
+    env === "staging"
+      ? process.env.STAGING_FRONTEND_URL
+      : process.env.PROD_FRONTEND_URL;
+  console.log({ env, FRONTEND_URL });
+  // mainWindow.setMenu(menu);
+  Menu.setApplicationMenu(menu);
 
-  mainWindow.loadURL('https://kiosk.shatayu.online');
+  mainWindow.loadURL(FRONTEND_URL);
 
-  mainWindow.webContents.once('did-finish-load', () => {
-    if (loaderWindow) {
+  mainWindow.webContents.once("did-finish-load", () => {
+    if (loaderWindow && !loaderWindow.isDestroyed()) {
       loaderWindow.close();
-      mainWindow.maximize(); // Maximizes the window when opened
-
     }
-    log.info('Main window loaded successfully.');
-
-    // Check for updates after the main window is loaded
-    autoUpdater.checkForUpdates();
+    mainWindow.maximize();
+    mainWindow.show();
+    log.info("Main window loaded successfully.");
   });
 
-  setuplocalFileWatcher();
-};
+  setTimeout(() => {
+    if (loaderWindow && !loaderWindow.isDestroyed()) {
+      loaderWindow.close();
+      log.warn("Loader window closed due to timeout.");
+    }
+  }, 10000);
 
-// Function to create an update modal
-const createUpdateWindow = () => {
+  try {
+    if (typeof setupLocalFileWatcher === "function") {
+      setupLocalFileWatcher();
+      log.info("Local file watcher initialized.");
+    } else {
+      log.warn("setupLocalFileWatcher is not a function.");
+    }
+  } catch (error) {
+    log.error(`Error in setupLocalFileWatcher: ${error.message}`);
+  }
+}
+
+function createUpdateWindow() {
+  const preloadPath = path.join(__dirname, "preload.js");
+
+  if (!fs.existsSync(preloadPath)) {
+    log.error("Preload script not found:", preloadPath);
+    return;
+  }
+
   updateWindow = new BrowserWindow({
     width: 400,
     height: 300,
     title: "Update Available",
     resizable: false,
-    modal: false,
+    modal: true,
     parent: mainWindow,
     show: false,
     webPreferences: {
-      nodeIntegration: true,
-      preload: path.join(__dirname, 'preload.js'), // Load the preload script
-
+      contextIsolation: true,
+      preload: preloadPath,
     },
   });
-  updateWindow.setMenu(null); // Remove default menu (File, Edit, etc.)
 
-
+  updateWindow.setMenu(null);
   updateWindow.loadFile(path.join(__dirname, "update-modal.html"));
+  updateWindow.once("ready-to-show", () => updateWindow.show());
+}
 
-  updateWindow.once('ready-to-show', () => {
-    updateWindow.show();
-  });
-};
-
-app.whenReady().then(() => {
-  createLoaderWindow();
-  createMainWindow();
-  // createUpdateWindow()
-  log.info('App is ready. Checking for updates...');
+function setupAutoUpdater() {
+  log.info("Checking for updates...");
   autoUpdater.checkForUpdatesAndNotify();
 
-  autoUpdater.on('update-available', () => {
-    log.info('Update available. Showing update modal.');
+  autoUpdater.on("update-available", () => {
+    log.info("Update available.");
     createUpdateWindow();
   });
 
-  autoUpdater.on('download-progress', (progressObj) => {
-    let progress = progressObj.percent.toFixed(2);
-    log.info(`Download progress: ${progress}%`);
-    if (updateWindow) {
-      updateWindow.webContents.send('download-progress', progress);
-    }
+  autoUpdater.on("download-progress", (progress) => {
+    const percent = progress.percent.toFixed(2);
+    log.info(`Download progress: ${percent}%`);
+    updateWindow?.webContents.send("download-progress", percent);
   });
 
-  autoUpdater.on('update-downloaded', () => {
-    log.info('Update downloaded. Enabling Quit & Relaunch button.');
-    if (updateWindow) {
-      updateWindow.webContents.send('update-downloaded');
-    }
+  autoUpdater.on("update-downloaded", () => {
+    log.info("Update downloaded.");
+    updateWindow?.webContents.send("update-downloaded");
   });
 
-  ipcMain.on('quit-and-install', () => {
-    console.log("quiting ...");
-    
+  autoUpdater.on("error", (error) => {
+    log.error(`Update error: ${error.message}`);
+    updateWindow?.webContents.send("update-error", error.message);
+  });
+}
+
+function registerIpcHandlers() {
+  ipcMain.on("quit-and-install", () => {
+    log.info("Quitting and installing update...");
     autoUpdater.quitAndInstall();
   });
+
+  ipcMain.handle("get-version", () => app.getVersion());
+}
+
+app.whenReady().then(() => {
+  initializeLogger();
+  createLoaderWindow();
+  createMainWindow();
+  setupAutoUpdater();
+  registerIpcHandlers();
 });
 
-ipcMain.handle('get-version', () => app.getVersion());
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    log.info('All windows closed, quitting app...');
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    log.info("All windows closed. Quitting app.");
     app.quit();
+  }
+});
+
+app.on("activate", () => {
+  if (BrowserWindow.getAllWindows().length === 0) {
+    createMainWindow();
   }
 });

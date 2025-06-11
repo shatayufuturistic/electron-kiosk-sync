@@ -2,54 +2,62 @@ const fs = require("fs");
 const path = require("path");
 const AWS = require("aws-sdk");
 const axios = require("axios");
-const dns = require("dns");
 const chokidar = require("chokidar");
 const log = require("electron-log");
-const dotenv = require('dotenv');
+const dotenv = require("dotenv");
 const Store = require("electron-store");
+const { app } = require("electron");
+const getStore = require("../utils/localstorage");
 
-// Initialize logging
-const logPath = path.join(
-  "D:\\Sync\\Log",
-  "sync.log"
-);
+// Get store instance
+const store = getStore();
+// Environment variables
+const envPath = path.join(process.resourcesPath, "app/.env");
+dotenv.config({ path: fs.existsSync(envPath) ? envPath : ".env" });
+
+// Logging setup
+const logPath = process.env.LOG_PATH;
+const BUCKET_NAME = process.env.BUCKET_NAME;
+const folderPath = process.env.SYNC_PATH;
+const API_KEY = process.env.API_KEY;
+
+const env = store.get("environment");
+
+const BACKEND_URL =
+  env === "staging"
+    ? process.env.STAGING_BACKEND_URL
+    : process.env.PROD_BACKEND_URL;
+console.log({ BACKEND_URL, env });
+const logDir = path.dirname(logPath);
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir, { recursive: true });
+}
 log.transports.file.resolvePathFn = () => logPath;
-log.transports.file.level = "info"; // Log only info and above
-
+log.transports.file.level = "info";
 log.info("Application started.");
 
-// Initialize electron-store
-const store = new Store();
-log.info("Electron Store initialized.");
+// Validate AWS credentials
+if (!process.env.ACCESS_KEY_ID || !process.env.SECRET_ACCESS_KEY) {
+  log.error("AWS credentials are missing or invalid.");
+  throw new Error("AWS credentials not configured.");
+}
 
-const BUCKET_NAME = "satayu-kiosks";
-const folderPath = "D:\\KHG\\Reports";
-const envPath = path.join(process.resourcesPath, "app/.env");
-dotenv.config({ path: envPath });
+// Load upload queue
+let uploadQueue = store.get("uploadQueue") || [];
+log.info(`Loaded upload queue: ${JSON.stringify(uploadQueue)}`);
 
-// Load environment variables
-dotenv.config();
-console.log({ key: process.env.ACCESS_KEY_ID, secret:process.env.SECRET_ACCESS_KEY })
 // Initialize S3 client
 const s3 = new AWS.S3({
   accessKeyId: process.env.ACCESS_KEY_ID,
   secretAccessKey: process.env.SECRET_ACCESS_KEY,
   region: "ap-south-1",
-  httpOptions: {
-    timeout: 60000,
-    connectTimeout: 5000,
-  },
+  httpOptions: { timeout: 60000, connectTimeout: 5000 },
   maxRetries: 3,
   partSize: 10 * 1024 * 1024,
 });
-
 log.info("AWS S3 client initialized.");
 
-// Load upload queue from electron-store
-let uploadQueue = store.get("uploadQueue") || [];
-log.info(`Loaded upload queue: ${JSON.stringify(uploadQueue)}`);
-
-// Utility: Add a file path to the queue (if not already present)
+// Utility functions
 function addToUploadQueue(filePath) {
   if (!uploadQueue.includes(filePath)) {
     uploadQueue.push(filePath);
@@ -58,56 +66,77 @@ function addToUploadQueue(filePath) {
   }
 }
 
-// Utility: Remove a file path from the queue
 function removeFromUploadQueue(filePath) {
   uploadQueue = uploadQueue.filter((fp) => fp !== filePath);
   store.set("uploadQueue", uploadQueue);
   log.info(`Removed file from upload queue: ${filePath}`);
 }
 
-// Function to check internet connectivity
+// Internet connectivity check
 function checkInternetConnection() {
   return new Promise((resolve, reject) => {
-    dns.lookup("google.com", (err) => {
-      if (err && err.code === "ENOTFOUND") {
-        log.error("No internet connection detected.");
+    axios
+      .get(`https://${BUCKET_NAME}.s3.ap-south-1.amazonaws.com`, {
+        timeout: 5000,
+      })
+      .then(() => {
+        log.info("Internet connection to S3 available.");
+        resolve();
+      })
+      .catch(() => {
+        log.error("No internet connection to S3.");
         reject("No internet connection");
-      } else {
-        log.info("Internet connection available.");
-        resolve("Internet connection available");
-      }
-    });
+      });
   });
 }
 
-// Wait for file stability before uploading
+// File stability check
+const stabilityIntervals = new Set();
 const waitForFileToStabilize = (filePath) => {
   log.info(`Checking file stability: ${filePath}`);
   let previousSize = 0;
   let stableCounter = 0;
-  const maxStableCount = 5;
-  const checkInterval = 500;
+  const maxStableCount = 10;
+  const checkInterval = 1000;
 
   const checkFile = setInterval(() => {
-    const currentSize = fs.statSync(filePath).size;
-    if (currentSize === previousSize) {
-      stableCounter += 1;
-      if (stableCounter >= maxStableCount) {
-        clearInterval(checkFile);
-        log.info(`File stabilized, ready for upload: ${filePath}`);
-        uploadFileToS3(filePath);
+    try {
+      const currentSize = fs.statSync(filePath).size;
+      if (currentSize === previousSize) {
+        stableCounter += 1;
+        if (stableCounter >= maxStableCount) {
+          clearInterval(checkFile);
+          stabilityIntervals.delete(checkFile);
+          log.info(`File stabilized, ready for upload: ${filePath}`);
+          uploadFileToS3(filePath);
+        }
+      } else {
+        stableCounter = 0;
       }
-    } else {
-      stableCounter = 0;
+      previousSize = currentSize;
+    } catch (error) {
+      log.error(
+        `Error checking file stability: ${filePath}, Error: ${error.message}`
+      );
+      clearInterval(checkFile);
+      stabilityIntervals.delete(checkFile);
     }
-    previousSize = currentSize;
   }, checkInterval);
+  stabilityIntervals.add(checkFile);
 };
 
-// Function to upload a file to S3 and notify the backend
-const uploadFileToS3 = (filePath) => {
+// Upload to S3
+const uploadFileToS3 = (filePath, callback = () => {}) => {
   log.info(`Uploading file to S3: ${filePath}`);
-  const fileStream = fs.createReadStream(filePath);
+  let fileStream;
+  try {
+    fileStream = fs.createReadStream(filePath);
+  } catch (error) {
+    log.error(`Error reading file: ${filePath}, Error: ${error.message}`);
+    callback();
+    return;
+  }
+
   const params = {
     Bucket: BUCKET_NAME,
     Key: path.basename(filePath),
@@ -116,36 +145,44 @@ const uploadFileToS3 = (filePath) => {
 
   s3.upload(params, (err, data) => {
     if (err) {
-      log.error(`Error uploading file to S3: ${filePath}, Error: ${err.message}`);
+      log.error(
+        `Error uploading file to S3: ${filePath}, Error: ${err.message}`
+      );
       addToUploadQueue(filePath);
+      callback();
       return;
     }
 
     log.info(`File uploaded successfully to S3: ${data.Location}`);
-
     removeFromUploadQueue(filePath);
 
     const payload = {
-      fileURL: `https://satayu-kiosks.s3.ap-south-1.amazonaws.com/${data.Key}`,
-      key: 9090,
-      testName: filePath.split("\\")[3],
+      fileURL: `https://${BUCKET_NAME}.s3.ap-south-1.amazonaws.com/${data.Key}`,
+      key: API_KEY,
+      testName: path.basename(filePath, path.extname(filePath)),
     };
 
     log.info(`Sending file URL to backend: ${JSON.stringify(payload)}`);
 
     axios
-      .patch("https://shatayu.online/addTestReportToPatient", payload)
+      .patch(BACKEND_URL + "/addTestReportToPatient", payload)
       .then((response) => {
-        log.info(`File URL posted successfully: ${JSON.stringify(response?.data)}`);
+        log.info(
+          `File URL posted successfully: ${JSON.stringify(response?.data)}`
+        );
       })
       .catch((error) => {
-        log.error(`Error posting file URL: ${JSON.stringify(error?.response?.data)}`);
+        log.error(
+          `Error posting file URL: ${JSON.stringify(error?.response?.data)}`
+        );
       });
+
+    callback();
   });
 };
 
-// Process and retry uploads for all files in the queue
-function processUploadQueue() {
+// Process upload queue
+async function processUploadQueue() {
   if (uploadQueue.length === 0) {
     log.info("Upload queue is empty. Nothing to process.");
     return;
@@ -153,24 +190,32 @@ function processUploadQueue() {
 
   log.info(`Processing upload queue: ${JSON.stringify(uploadQueue)}`);
 
-  checkInternetConnection()
-    .then(() => {
-      uploadQueue.forEach(uploadFileToS3);
-    })
-    .catch(() => {
-      log.info("Internet not available; will retry queued files later.");
-    });
+  try {
+    await checkInternetConnection();
+    for (const filePath of uploadQueue) {
+      await new Promise((resolve) => uploadFileToS3(filePath, resolve));
+    }
+  } catch {
+    log.info("Internet not available; will retry queued files later.");
+  }
 }
 
-// Process upload queue every 10 seconds
 setInterval(processUploadQueue, 10000);
 
-// Set up file watcher to monitor the folder for new files
-function setuplocalFileWatcher() {
+// File watcher
+let watcher;
+function setupLocalFileWatcher() {
   log.info(`Setting up file watcher on folder: ${folderPath}`);
-  const watcher = chokidar.watch(folderPath, {
+  if (!fs.existsSync(folderPath)) {
+    fs.mkdirSync(folderPath, { recursive: true });
+    log.info(`Created reports directory: ${folderPath}`);
+  }
+
+  watcher = chokidar.watch(folderPath, {
     persistent: true,
     ignoreInitial: true,
+    ignored: ["**/*.*", "!**/*.{png,jpg,jpeg,pdf,txt}"],
+    awaitWriteFinish: { stabilityThreshold: 5000, pollInterval: 1000 },
   });
 
   watcher
@@ -189,6 +234,14 @@ function setuplocalFileWatcher() {
   return watcher;
 }
 
-module.exports = {
-  setuplocalFileWatcher,
-};
+// Cleanup
+app.on("before-quit", () => {
+  if (watcher) {
+    watcher.close();
+    log.info("File watcher closed.");
+  }
+  stabilityIntervals.forEach(clearInterval);
+  log.info("Cleared file stability intervals.");
+});
+
+module.exports = { setupLocalFileWatcher };

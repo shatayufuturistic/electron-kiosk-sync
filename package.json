@@ -9,7 +9,7 @@
         "from": "./.env",
         "to": "app/.env"
       }
-    ],    
+    ],
     "appId": "com.abhaya.shatayu.sync",
     "publish": [
       {
