@@ -1,6 +1,6 @@
 {
   "name": "shatayu",
-  "version": "1.0.2",
+  "version": "1.0.0",
   "description": "Shatayu syncing software",
   "main": "src/index.js",
   "build": {
@@ -10,12 +10,12 @@
         "to": "app/.env"
       }
     ],
-    "appId": "com.abhaya.shatayu.sync",
+    "appId": "com.shatayu.sync",
     "publish": [
       {
         "provider": "github",
-        "owner": "abhaya-kumar-sahoo",
-        "repo": "Electron-Shatayu-Sync"
+        "owner": "utkarshsiddharth",
+        "repo": "electron-kiosk-sync"
       }
     ],
     "win": {

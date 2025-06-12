@@ -27,7 +27,8 @@ const BACKEND_URL =
   env === "staging"
     ? process.env.STAGING_BACKEND_URL
     : process.env.PROD_BACKEND_URL;
-console.log({ BACKEND_URL, env });
+log.info(JSON.stringify({BACKEND_URL,env}))
+console.log({ BACKEND_URL, env, API_KEY });
 const logDir = path.dirname(logPath);
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
@@ -158,9 +159,9 @@ const uploadFileToS3 = (filePath, callback = () => {}) => {
 
     const payload = {
       fileURL: `https://${BUCKET_NAME}.s3.ap-south-1.amazonaws.com/${data.Key}`,
-      key: API_KEY,
-      testName: path.basename(filePath, path.extname(filePath)),
-    };
+      key: parseInt(API_KEY),
+      testName: filePath.split('\\')[3] 
+     };
 
     log.info(`Sending file URL to backend: ${JSON.stringify(payload)}`);
 
@@ -184,7 +185,7 @@ const uploadFileToS3 = (filePath, callback = () => {}) => {
 // Process upload queue
 async function processUploadQueue() {
   if (uploadQueue.length === 0) {
-    log.info("Upload queue is empty. Nothing to process.");
+    //log.info("Upload queue is empty. Nothing to process.");
     return;
   }
 
