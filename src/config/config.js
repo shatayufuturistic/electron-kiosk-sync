@@ -27,8 +27,7 @@ const BACKEND_URL =
   env === "staging"
     ? process.env.STAGING_BACKEND_URL
     : process.env.PROD_BACKEND_URL;
-log.info(JSON.stringify({BACKEND_URL,env}))
-console.log({ BACKEND_URL, env, API_KEY });
+log.info(JSON.stringify({ BACKEND_URL, env }));
 const logDir = path.dirname(logPath);
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
@@ -160,8 +159,8 @@ const uploadFileToS3 = (filePath, callback = () => {}) => {
     const payload = {
       fileURL: `https://${BUCKET_NAME}.s3.ap-south-1.amazonaws.com/${data.Key}`,
       key: parseInt(API_KEY),
-      testName: filePath.split('\\')[3] 
-     };
+      testName: filePath.split("\\")[3],
+    };
 
     log.info(`Sending file URL to backend: ${JSON.stringify(payload)}`);
 

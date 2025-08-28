@@ -71,7 +71,6 @@ function createMainWindow() {
     env === "staging"
       ? process.env.STAGING_FRONTEND_URL
       : process.env.PROD_FRONTEND_URL;
-  console.log({ env, FRONTEND_URL });
   // mainWindow.setMenu(menu);
   Menu.setApplicationMenu(menu);
 

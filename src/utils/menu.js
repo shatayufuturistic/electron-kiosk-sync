@@ -3,6 +3,7 @@ const { app } = require("electron");
 const log = require("electron-log");
 const Store = require("electron-store");
 const store = new Store();
+const envTyp = store.get("environment");
 
 const isMac = process.platform === "darwin";
 function switchEnvironment(environment) {
@@ -114,11 +115,11 @@ const menuTemplate = [
         label: "Change Env",
         submenu: [
           {
-            label: "Production",
+            label: `${envTyp === "production" ? "✅" : "     "} Production`,
             click: () => switchEnvironment("production"),
           },
           {
-            label: "Staging",
+            label: `${envTyp === "staging" ? "✅" : "     "} Staging`,
             click: () => switchEnvironment("staging"),
           },
         ],
