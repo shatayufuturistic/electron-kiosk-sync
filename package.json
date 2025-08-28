@@ -25,7 +25,10 @@
   },
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "publish": "electron-builder --publish=always",
+    "build-for-release": "electron-builder --publish=never",
+    "draft-release": "electron-builder --publish=onTagOrDraft"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.777.0",

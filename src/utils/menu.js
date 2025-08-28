@@ -1,4 +1,5 @@
 const { app } = require("electron");
+const { ipcMain } = require("electron");
 
 const log = require("electron-log");
 const Store = require("electron-store");
@@ -6,6 +7,15 @@ const store = new Store();
 const envTyp = store.get("environment");
 
 const isMac = process.platform === "darwin";
+
+// Import admin functions
+let openAdminPanel;
+
+// Set the admin panel opener function
+function setAdminPanelOpener(opener) {
+  openAdminPanel = opener;
+}
+
 function switchEnvironment(environment) {
   try {
     store.set("environment", environment);
@@ -112,20 +122,17 @@ const menuTemplate = [
     label: "Tools",
     submenu: [
       {
-        label: "Change Env",
-        submenu: [
-          {
-            label: `${envTyp === "production" ? "✅" : "     "} Production`,
-            click: () => switchEnvironment("production"),
-          },
-          {
-            label: `${envTyp === "staging" ? "✅" : "     "} Staging`,
-            click: () => switchEnvironment("staging"),
-          },
-        ],
+        label: "Admin Panel",
+        click: () => {
+          if (openAdminPanel) {
+            openAdminPanel();
+          } else {
+            log.warn("Admin panel opener not set");
+          }
+        },
       },
     ],
   },
 ];
 
-module.exports = { menuTemplate };
+module.exports = { menuTemplate, setAdminPanelOpener };

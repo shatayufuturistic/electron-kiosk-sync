@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Configuration</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: "#4c51bf",
+              secondary: "#667eea",
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body class="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 p-3">
+    <div
+      class="bg-white/95 backdrop-blur-lg rounded-xl shadow-2xl border border-white/20 w-full max-w-7xl mx-auto p-4"
+    >
+      <!-- Header -->
+      <div class="text-center mb-4">
+        <h1 class="text-xl font-bold text-primary mb-1">
+          ⚙️ Shatayu Sync Admin Panel
+        </h1>
+        <p class="text-xs text-gray-600">System Configuration & Management</p>
+      </div>
+
+      <!-- Authentication Section -->
+      <div class="auth-section" id="authSection">
+        <div class="max-w-md mx-auto">
+          <div class="text-center mb-4">
+            <h2 class="text-lg font-bold text-primary mb-2">
+              🔐 Admin Access Required
+            </h2>
+            <p class="text-xs text-gray-600">
+              Enter your credentials to access the configuration panel
+            </p>
+          </div>
+
+          <form id="authForm" class="space-y-3">
+            <div>
+              <label
+                for="password"
+                class="block text-xs font-semibold text-gray-700 mb-1"
+              >
+                Admin Password
+              </label>
+              <input
+                type="password"
+                id="password"
+                placeholder="Enter your password"
+                required
+                class="w-full px-3 py-2 border-2 border-gray-200 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all duration-200 bg-white/80 text-sm"
+              />
+              <div
+                id="authError"
+                class="hidden mt-1 p-2 bg-red-50 border-l-4 border-red-500 text-red-700 text-xs rounded"
+              ></div>
+            </div>
+
+            <button
+              type="submit"
+              class="w-full bg-gradient-to-r from-primary to-secondary text-white font-semibold py-2 px-4 rounded-lg hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 text-sm"
+            >
+              Authenticate
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Configuration Section -->
+      <div class="config-section hidden" id="configSection">
+        <!-- Configuration Grid Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
+          <!-- Environment Configuration -->
+          <div class="bg-white/50 rounded-lg p-3 border border-gray-200">
+            <h2
+              class="text-sm font-semibold text-gray-800 mb-2 flex items-center"
+            >
+              🌍 Environment Control
+            </h2>
+            <div class="bg-purple-50 border-l-4 border-purple-500 p-2 mb-2">
+              <p class="text-purple-700 text-xs">
+                Switch between production and staging environments. App will
+                restart.
+              </p>
+            </div>
+
+            <div class="space-y-2">
+              <div>
+                <label class="block text-xs font-semibold text-gray-700 mb-1"
+                  >Current Environment:</label
+                >
+                <div
+                  id="currentEnvironment"
+                  class="bg-gray-100 p-2 rounded text-xs font-mono break-all min-h-[24px] flex items-center"
+                >
+                  Loading...
+                </div>
+              </div>
+
+              <div class="space-y-1">
+                <button
+                  type="button"
+                  id="switchToProduction"
+                  class="w-full bg-gradient-to-r from-green-600 to-green-700 text-white font-medium py-1.5 px-2 rounded text-xs hover:shadow-md transition-all duration-200"
+                >
+                  ✅ Switch to Production
+                </button>
+                <button
+                  type="button"
+                  id="switchToStaging"
+                  class="w-full bg-gradient-to-r from-orange-600 to-orange-700 text-white font-medium py-1.5 px-2 rounded text-xs hover:shadow-md transition-all duration-200"
+                >
+                  📝 Switch to Staging
+                </button>
+              </div>
+
+              <div
+                id="envError"
+                class="hidden mt-1 p-2 bg-red-50 border-l-4 border-red-500 text-red-700 text-xs rounded"
+              ></div>
+              <div
+                id="envSuccess"
+                class="hidden mt-1 p-2 bg-green-50 border-l-4 border-green-500 text-green-700 text-xs rounded"
+              ></div>
+            </div>
+          </div>
+
+          <!-- Sync Path Configuration -->
+          <div class="bg-white/50 rounded-lg p-3 border border-gray-200">
+            <h2
+              class="text-sm font-semibold text-gray-800 mb-2 flex items-center"
+            >
+              📁 Sync Path Configuration
+            </h2>
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-2 mb-2">
+              <p class="text-blue-700 text-xs">
+                Configure the local directory path where medical test reports
+                are monitored.
+              </p>
+            </div>
+
+            <div class="space-y-2">
+              <div>
+                <label class="block text-xs font-semibold text-gray-700 mb-1"
+                  >Current Sync Path:</label
+                >
+                <div
+                  id="currentPath"
+                  class="bg-gray-100 p-2 rounded text-xs font-mono break-all min-h-[24px] flex items-center"
+                >
+                  Loading...
+                </div>
+              </div>
+
+              <form id="syncPathForm" class="space-y-2">
+                <div>
+                  <label
+                    for="newPath"
+                    class="block text-xs font-semibold text-gray-700 mb-1"
+                  >
+                    New Sync Path:
+                  </label>
+                  <div class="flex gap-1">
+                    <input
+                      type="text"
+                      id="newPath"
+                      placeholder="Enter new path (e.g., D:\KHG\Reports)"
+                      required
+                      class="flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs focus:border-primary focus:ring-1 focus:ring-primary/10 transition-all duration-200"
+                    />
+                    <button
+                      type="button"
+                      id="browsePath"
+                      class="px-2 py-1.5 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors text-xs"
+                    >
+                      Browse
+                    </button>
+                  </div>
+                  <div
+                    id="syncPathError"
+                    class="hidden mt-1 p-1 bg-red-50 border-l-4 border-red-500 text-red-700 text-xs rounded"
+                  ></div>
+                  <div
+                    id="syncPathSuccess"
+                    class="hidden mt-1 p-1 bg-green-50 border-l-4 border-green-500 text-green-700 text-xs rounded"
+                  ></div>
+                </div>
+
+                <div class="flex gap-1">
+                  <button
+                    type="submit"
+                    class="flex-1 bg-gradient-to-r from-primary to-secondary text-white font-medium py-1.5 px-2 rounded hover:shadow-md transition-all duration-200 text-xs"
+                  >
+                    Save Path
+                  </button>
+                  <button
+                    type="button"
+                    id="testSyncPath"
+                    class="px-2 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
+                  >
+                    Test
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- Log Path Configuration -->
+          <div class="bg-white/50 rounded-lg p-3 border border-gray-200">
+            <h2
+              class="text-sm font-semibold text-gray-800 mb-2 flex items-center"
+            >
+              📝 Log File Configuration
+            </h2>
+            <div class="bg-yellow-50 border-l-4 border-yellow-500 p-2 mb-2">
+              <p class="text-yellow-700 text-xs">
+                Configure where application logs are stored. Changes require
+                application restart.
+              </p>
+            </div>
+
+            <div class="space-y-2">
+              <div>
+                <label class="block text-xs font-semibold text-gray-700 mb-1"
+                  >Current Log Path:</label
+                >
+                <div
+                  id="currentLogPath"
+                  class="bg-gray-100 p-2 rounded text-xs font-mono break-all min-h-[24px] flex items-center"
+                >
+                  Loading...
+                </div>
+              </div>
+
+              <form id="logPathForm" class="space-y-2">
+                <div>
+                  <label
+                    for="newLogPath"
+                    class="block text-xs font-semibold text-gray-700 mb-1"
+                  >
+                    New Log File Path:
+                  </label>
+                  <div class="flex gap-1">
+                    <input
+                      type="text"
+                      id="newLogPath"
+                      placeholder="Enter log file path (e.g., D:\Sync\Log\app.log)"
+                      required
+                      class="flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs focus:border-primary focus:ring-1 focus:ring-primary/10 transition-all duration-200"
+                    />
+                    <button
+                      type="button"
+                      id="browseLogPath"
+                      class="px-2 py-1.5 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors text-xs"
+                    >
+                      Browse
+                    </button>
+                  </div>
+                  <div
+                    id="logPathError"
+                    class="hidden mt-1 p-1 bg-red-50 border-l-4 border-red-500 text-red-700 text-xs rounded"
+                  ></div>
+                  <div
+                    id="logPathSuccess"
+                    class="hidden mt-1 p-1 bg-green-50 border-l-4 border-green-500 text-green-700 text-xs rounded"
+                  ></div>
+                </div>
+
+                <div class="flex gap-1">
+                  <button
+                    type="submit"
+                    class="flex-1 bg-gradient-to-r from-green-600 to-green-700 text-white font-medium py-1.5 px-2 rounded hover:shadow-md transition-all duration-200 text-xs"
+                  >
+                    Save Path
+                  </button>
+                  <button
+                    type="button"
+                    id="testLogPath"
+                    class="px-2 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors text-xs"
+                  >
+                    Test
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- System Information Section -->
+        <div
+          class="bg-gradient-to-r from-gray-50 to-gray-100 rounded-lg p-3 border border-gray-200 mb-3"
+        >
+          <h2
+            class="text-sm font-semibold text-gray-800 mb-2 flex items-center"
+          >
+            📊 System Information
+          </h2>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div class="bg-white p-2 rounded border">
+              <h3 class="font-medium text-gray-700 mb-1 text-xs">
+                Application Version
+              </h3>
+              <p id="appVersion" class="text-xs font-mono text-primary">
+                Loading...
+              </p>
+            </div>
+            <div class="bg-white p-2 rounded border">
+              <h3 class="font-medium text-gray-700 mb-1 text-xs">
+                Current Environment
+              </h3>
+              <p id="currentEnv" class="text-xs font-mono text-secondary">
+                Loading...
+              </p>
+            </div>
+            <div class="bg-white p-2 rounded border">
+              <h3 class="font-medium text-gray-700 mb-1 text-xs">Status</h3>
+              <p class="text-xs font-semibold text-green-600">✓ Running</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex gap-2 pt-3 border-t border-gray-200">
+          <button
+            id="logoutBtn"
+            class="flex-1 bg-gray-600 text-white font-medium py-2 px-3 rounded hover:bg-gray-700 transition-colors text-xs"
+          >
+            Logout
+          </button>
+          <button
+            id="restartAppBtn"
+            class="flex-1 bg-red-600 text-white font-medium py-2 px-3 rounded hover:bg-red-700 transition-colors text-xs"
+          >
+            Restart Application
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Admin password will be loaded from backend
+      let ADMIN_PASSWORD = "admin123"; // default fallback
+
+      // DOM elements
+      const authSection = document.getElementById("authSection");
+      const configSection = document.getElementById("configSection");
+      const authForm = document.getElementById("authForm");
+      const syncPathForm = document.getElementById("syncPathForm");
+      const logPathForm = document.getElementById("logPathForm");
+      const passwordInput = document.getElementById("password");
+      const newPathInput = document.getElementById("newPath");
+      const newLogPathInput = document.getElementById("newLogPath");
+      const currentPathDiv = document.getElementById("currentPath");
+      const currentLogPathDiv = document.getElementById("currentLogPath");
+      const currentEnvironmentDiv =
+        document.getElementById("currentEnvironment");
+      const authError = document.getElementById("authError");
+      const syncPathError = document.getElementById("syncPathError");
+      const syncPathSuccess = document.getElementById("syncPathSuccess");
+      const logPathError = document.getElementById("logPathError");
+      const logPathSuccess = document.getElementById("logPathSuccess");
+      const envError = document.getElementById("envError");
+      const envSuccess = document.getElementById("envSuccess");
+      const browsePath = document.getElementById("browsePath");
+      const browseLogPath = document.getElementById("browseLogPath");
+      const testSyncPath = document.getElementById("testSyncPath");
+      const testLogPath = document.getElementById("testLogPath");
+      const logoutBtn = document.getElementById("logoutBtn");
+      const restartAppBtn = document.getElementById("restartAppBtn");
+      const switchToProduction = document.getElementById("switchToProduction");
+      const switchToStaging = document.getElementById("switchToStaging");
+      const appVersion = document.getElementById("appVersion");
+      const currentEnv = document.getElementById("currentEnv");
+
+      // Initialize
+      async function init() {
+        try {
+          ADMIN_PASSWORD = await window.electronAPI.getAdminPassword();
+        } catch (error) {
+          console.warn(
+            "Could not load admin password from backend, using default"
+          );
+        }
+        loadCurrentPaths();
+      }
+
+      init();
+
+      // Authentication
+      authForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const password = passwordInput.value;
+
+        if (password === ADMIN_PASSWORD) {
+          showConfigSection();
+        } else {
+          showError(authError, "Invalid password. Please try again.");
+        }
+      });
+
+      // Sync Path Configuration
+      syncPathForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const newPath = newPathInput.value.trim();
+
+        if (newPath) {
+          saveSyncPath(newPath);
+        } else {
+          showError(syncPathError, "Please enter a valid path.");
+        }
+      });
+
+      // Log Path Configuration
+      logPathForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const newLogPath = newLogPathInput.value.trim();
+
+        if (newLogPath) {
+          saveLogPath(newLogPath);
+        } else {
+          showError(logPathError, "Please enter a valid log file path.");
+        }
+      });
+
+      // Environment switching
+      switchToProduction.addEventListener("click", () => {
+        switchEnvironment("production");
+      });
+
+      switchToStaging.addEventListener("click", () => {
+        switchEnvironment("staging");
+      });
+
+      // Browse sync path
+      browsePath.addEventListener("click", () => {
+        window.electronAPI.browseFolder().then((path) => {
+          if (path) {
+            newPathInput.value = path;
+          }
+        });
+      });
+
+      // Browse log path
+      browseLogPath.addEventListener("click", () => {
+        window.electronAPI.browseLogFile().then((path) => {
+          if (path) {
+            newLogPathInput.value = path;
+          }
+        });
+      });
+
+      // Test sync path
+      testSyncPath.addEventListener("click", () => {
+        const path = newPathInput.value.trim();
+        if (path) {
+          window.electronAPI.testPath(path).then((result) => {
+            if (result.success) {
+              showSuccess(
+                syncPathSuccess,
+                "Sync path is valid and accessible!"
+              );
+            } else {
+              showError(
+                syncPathError,
+                `Sync path test failed: ${result.error}`
+              );
+            }
+          });
+        } else {
+          showError(syncPathError, "Please enter a path to test.");
+        }
+      });
+
+      // Test log path
+      testLogPath.addEventListener("click", () => {
+        const path = newLogPathInput.value.trim();
+        if (path) {
+          window.electronAPI.testLogPath(path).then((result) => {
+            if (result.success) {
+              showSuccess(logPathSuccess, "Log path is valid and writable!");
+            } else {
+              showError(logPathError, `Log path test failed: ${result.error}`);
+            }
+          });
+        } else {
+          showError(logPathError, "Please enter a log path to test.");
+        }
+      });
+
+      // Logout
+      logoutBtn.addEventListener("click", () => {
+        passwordInput.value = "";
+        newPathInput.value = "";
+        newLogPathInput.value = "";
+        showAuthSection();
+      });
+
+      // Restart application
+      restartAppBtn.addEventListener("click", () => {
+        if (
+          confirm(
+            "Are you sure you want to restart the application? Any unsaved work will be lost."
+          )
+        ) {
+          window.electronAPI.restartApp();
+        }
+      });
+
+      // Helper functions
+      function showAuthSection() {
+        authSection.classList.remove("hidden");
+        configSection.classList.add("hidden");
+        hideError(authError);
+      }
+
+      function showConfigSection() {
+        authSection.classList.add("hidden");
+        configSection.classList.remove("hidden");
+        hideError(authError);
+        loadCurrentPaths();
+      }
+
+      function loadCurrentPaths() {
+        // Load sync path
+        window.electronAPI.getCurrentPath().then((path) => {
+          currentPathDiv.textContent = path || "Not configured";
+          newPathInput.value = path || "";
+        });
+
+        // Load log path
+        window.electronAPI.getCurrentLogPath().then((path) => {
+          currentLogPathDiv.textContent = path || "Not configured";
+          newLogPathInput.value = path || "";
+        });
+
+        // Load environment
+        window.electronAPI.getCurrentEnvironment().then((env) => {
+          currentEnvironmentDiv.textContent = env || "Unknown";
+          currentEnv.textContent = env || "Unknown";
+        });
+
+        // Load system information
+        loadSystemInfo();
+      }
+
+      function loadSystemInfo() {
+        // Load app version
+        if (window.electronAPI.getVersion) {
+          window.electronAPI
+            .getVersion()
+            .then((version) => {
+              appVersion.textContent = version || "Unknown";
+            })
+            .catch(() => {
+              appVersion.textContent = "Unknown";
+            });
+        }
+      }
+
+      function saveSyncPath(path) {
+        window.electronAPI.savePath(path).then((result) => {
+          if (result.success) {
+            showSuccess(
+              syncPathSuccess,
+              "Sync path saved successfully! File watcher will restart."
+            );
+            loadCurrentPaths();
+            hideError(syncPathError);
+          } else {
+            showError(
+              syncPathError,
+              `Failed to save sync path: ${result.error}`
+            );
+          }
+        });
+      }
+
+      function saveLogPath(path) {
+        window.electronAPI.saveLogPath(path).then((result) => {
+          if (result.success) {
+            showSuccess(
+              logPathSuccess,
+              "Log path saved successfully! Restart application to apply changes."
+            );
+            loadCurrentPaths();
+            hideError(logPathError);
+          } else {
+            showError(logPathError, `Failed to save log path: ${result.error}`);
+          }
+        });
+      }
+
+      function switchEnvironment(environment) {
+        window.electronAPI.switchEnvironment(environment).then((result) => {
+          if (result.success) {
+            showSuccess(
+              envSuccess,
+              `Switching to ${environment} environment. App will restart...`
+            );
+            setTimeout(() => {
+              // App will restart automatically
+            }, 2000);
+          } else {
+            showError(
+              envError,
+              `Failed to switch environment: ${result.error}`
+            );
+          }
+        });
+      }
+
+      function showError(element, message) {
+        element.textContent = message;
+        element.classList.remove("hidden");
+      }
+
+      function hideError(element) {
+        element.classList.add("hidden");
+      }
+
+      function showSuccess(element, message) {
+        element.textContent = message;
+        element.classList.remove("hidden");
+        setTimeout(() => {
+          element.classList.add("hidden");
+        }, 5000);
+      }
+    </script>
+  </body>
+</html>

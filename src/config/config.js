@@ -16,9 +16,11 @@ const envPath = path.join(process.resourcesPath, "app/.env");
 dotenv.config({ path: fs.existsSync(envPath) ? envPath : ".env" });
 
 // Logging setup
-const logPath = process.env.LOG_PATH;
+// Get log path from store first, fallback to environment variable
+const logPath = store.get("logPath") || process.env.LOG_PATH;
 const BUCKET_NAME = process.env.BUCKET_NAME;
-const folderPath = process.env.SYNC_PATH;
+// Get sync path from store first, fallback to environment variable
+const folderPath = store.get("syncPath") || process.env.SYNC_PATH;
 const API_KEY = process.env.API_KEY;
 
 const env = store.get("environment");
@@ -28,13 +30,19 @@ const BACKEND_URL =
     ? process.env.STAGING_BACKEND_URL
     : process.env.PROD_BACKEND_URL;
 log.info(JSON.stringify({ BACKEND_URL, env }));
-const logDir = path.dirname(logPath);
-if (!fs.existsSync(logDir)) {
-  fs.mkdirSync(logDir, { recursive: true });
+
+// Initialize logging if log path is configured
+if (logPath) {
+  const logDir = path.dirname(logPath);
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+  log.transports.file.resolvePathFn = () => logPath;
+  log.transports.file.level = "info";
+  log.info("Application started with custom log path.");
+} else {
+  log.info("Application started with default logging.");
 }
-log.transports.file.resolvePathFn = () => logPath;
-log.transports.file.level = "info";
-log.info("Application started.");
 
 // Validate AWS credentials
 if (!process.env.ACCESS_KEY_ID || !process.env.SECRET_ACCESS_KEY) {
@@ -204,14 +212,33 @@ setInterval(processUploadQueue, 10000);
 
 // File watcher
 let watcher;
-function setupLocalFileWatcher() {
-  log.info(`Setting up file watcher on folder: ${folderPath}`);
-  if (!fs.existsSync(folderPath)) {
-    fs.mkdirSync(folderPath, { recursive: true });
-    log.info(`Created reports directory: ${folderPath}`);
+function setupLocalFileWatcher(customPath = null) {
+  const watchPath = customPath || folderPath;
+
+  if (!watchPath) {
+    log.error("No sync path configured. Please set sync path in admin panel.");
+    return null;
   }
 
-  watcher = chokidar.watch(folderPath, {
+  log.info(`Setting up file watcher on folder: ${watchPath}`);
+
+  if (!fs.existsSync(watchPath)) {
+    try {
+      fs.mkdirSync(watchPath, { recursive: true });
+      log.info(`Created reports directory: ${watchPath}`);
+    } catch (error) {
+      log.error(`Failed to create directory ${watchPath}: ${error.message}`);
+      return null;
+    }
+  }
+
+  // Close existing watcher if it exists
+  if (watcher) {
+    watcher.close();
+    log.info("Previous file watcher closed");
+  }
+
+  watcher = chokidar.watch(watchPath, {
     persistent: true,
     ignoreInitial: true,
     ignored: ["**/*.*", "!**/*.{png,jpg,jpeg,pdf,txt}"],
@@ -230,6 +257,11 @@ function setupLocalFileWatcher() {
     .on("error", (error) => {
       log.error(`File watcher error: ${error}`);
     });
+
+  // Update stored path if custom path was provided
+  if (customPath) {
+    store.set("syncPath", customPath);
+  }
 
   return watcher;
 }
