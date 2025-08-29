@@ -32,6 +32,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   switchEnvironment: (environment) =>
     ipcRenderer.invoke("admin-switch-environment", environment),
 
+  // Path detection and management
+  getAvailableDrives: () => ipcRenderer.invoke("admin-get-available-drives"),
+  getSmartDefaults: () => ipcRenderer.invoke("admin-get-smart-defaults"),
+
+  // Drive status checking
+  checkDriveAvailability: () =>
+    ipcRenderer.invoke("admin-check-drive-availability"),
+
   // Close admin window
   closeWindow: () => ipcRenderer.send("admin-close-window"),
 });

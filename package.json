@@ -1,6 +1,6 @@
 {
   "name": "shatayu",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Shatayu syncing software",
   "main": "src/index.js",
   "build": {
@@ -14,21 +14,37 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "utkarshsiddharth",
+        "owner": "shatayufuturistic",
         "repo": "electron-kiosk-sync"
       }
     ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "publisherName": "Shatayu Futuristic",
+      "requestedExecutionLevel": "asInvoker",
+      "verifyUpdateCodeSignature": false
     }
   },
   "scripts": {
     "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
     "dist": "electron-builder",
-    "publish": "electron-builder --publish=always",
+    "publish": "electron-builder --win",
     "build-for-release": "electron-builder --publish=never",
-    "draft-release": "electron-builder --publish=onTagOrDraft"
+    "draft-release": "electron-builder --publish=onTagOrDraft",
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.777.0",

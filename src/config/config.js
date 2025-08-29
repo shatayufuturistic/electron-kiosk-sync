@@ -8,6 +8,11 @@ const dotenv = require("dotenv");
 const Store = require("electron-store");
 const { app } = require("electron");
 const getStore = require("../utils/localstorage");
+const {
+  initializePaths,
+  getBestAvailablePath,
+  ensureDirectoryExists,
+} = require("../utils/pathManager");
 
 // Get store instance
 const store = getStore();
@@ -15,12 +20,15 @@ const store = getStore();
 const envPath = path.join(process.resourcesPath, "app/.env");
 dotenv.config({ path: fs.existsSync(envPath) ? envPath : ".env" });
 
+// Initialize paths with smart defaults and validation
+const initializedPaths = initializePaths(store);
+
 // Logging setup
-// Get log path from store first, fallback to environment variable
-const logPath = store.get("logPath") || process.env.LOG_PATH;
+// Use initialized log path
+const logPath = initializedPaths.logPath;
 const BUCKET_NAME = process.env.BUCKET_NAME;
-// Get sync path from store first, fallback to environment variable
-const folderPath = store.get("syncPath") || process.env.SYNC_PATH;
+// Use initialized sync path
+const folderPath = initializedPaths.syncPath;
 const API_KEY = process.env.API_KEY;
 
 const env = store.get("environment");
@@ -31,17 +39,21 @@ const BACKEND_URL =
     : process.env.PROD_BACKEND_URL;
 log.info(JSON.stringify({ BACKEND_URL, env }));
 
-// Initialize logging if log path is configured
+// Initialize logging with validated log path
 if (logPath) {
   const logDir = path.dirname(logPath);
-  if (!fs.existsSync(logDir)) {
-    fs.mkdirSync(logDir, { recursive: true });
+  // Ensure log directory exists
+  if (ensureDirectoryExists(logDir)) {
+    log.transports.file.resolvePathFn = () => logPath;
+    log.transports.file.level = "info";
+    log.info(`Application started with log path: ${logPath}`);
+  } else {
+    log.warn(
+      `Failed to create log directory, using default logging: ${logDir}`
+    );
   }
-  log.transports.file.resolvePathFn = () => logPath;
-  log.transports.file.level = "info";
-  log.info("Application started with custom log path.");
 } else {
-  log.info("Application started with default logging.");
+  log.warn("No valid log path found, using default logging.");
 }
 
 // Validate AWS credentials
@@ -213,21 +225,38 @@ setInterval(processUploadQueue, 10000);
 // File watcher
 let watcher;
 function setupLocalFileWatcher(customPath = null) {
-  const watchPath = customPath || folderPath;
+  // Get the best available path
+  let watchPath = customPath;
+
+  // If no custom path provided, get from store or generate smart default
+  if (!watchPath) {
+    const storedPath = store.get("syncPath");
+    watchPath = storedPath || getBestAvailablePath(null, "syncPath");
+  }
 
   if (!watchPath) {
-    log.error("No sync path configured. Please set sync path in admin panel.");
+    log.error(
+      "No valid watch path available, file watcher cannot be initialized"
+    );
     return null;
   }
 
   log.info(`Setting up file watcher on folder: ${watchPath}`);
 
-  if (!fs.existsSync(watchPath)) {
-    try {
-      fs.mkdirSync(watchPath, { recursive: true });
-      log.info(`Created reports directory: ${watchPath}`);
-    } catch (error) {
-      log.error(`Failed to create directory ${watchPath}: ${error.message}`);
+  // Ensure directory exists
+  if (!ensureDirectoryExists(watchPath)) {
+    log.error(`Failed to create or access watch directory: ${watchPath}`);
+    // Try to get a fallback path
+    const fallbackPath = getBestAvailablePath(null, "syncPath");
+    if (fallbackPath !== watchPath && ensureDirectoryExists(fallbackPath)) {
+      watchPath = fallbackPath;
+      log.info(`Using fallback watch path: ${watchPath}`);
+      // Update stored path with working fallback
+      store.set("syncPath", watchPath);
+    } else {
+      log.error(
+        "No valid watch path available, file watcher cannot be initialized"
+      );
       return null;
     }
   }
@@ -258,11 +287,13 @@ function setupLocalFileWatcher(customPath = null) {
       log.error(`File watcher error: ${error}`);
     });
 
-  // Update stored path if custom path was provided
-  if (customPath) {
+  // Update stored path if custom path was provided and it's different
+  if (customPath && customPath !== store.get("syncPath")) {
     store.set("syncPath", customPath);
+    log.info(`Updated stored sync path to: ${customPath}`);
   }
 
+  log.info(`File watcher successfully initialized on: ${watchPath}`);
   return watcher;
 }
 

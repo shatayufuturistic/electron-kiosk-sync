@@ -16,32 +16,50 @@ const dotenv = require("dotenv");
 const Store = require("electron-store");
 const { menuTemplate, setAdminPanelOpener } = require("./utils/menu");
 const getStore = require("./utils/localstorage");
+const {
+  initializePaths,
+  getBestAvailablePath,
+  ensureDirectoryExists,
+  getAvailableDrives,
+  getSystemStorageInfo,
+  validatePath,
+} = require("./utils/pathManager");
 const envPath = path.join(process.resourcesPath, "app/.env");
 dotenv.config({ path: fs.existsSync(envPath) ? envPath : ".env" });
 const store = getStore();
 
 let mainWindow, loaderWindow, updateWindow, adminWindow;
 let currentFileWatcher = null;
-// Initialize logging
+// Initialize logging with smart path management
 function initializeLogger() {
   const env = store.get("environment");
   if (!env) {
     store.set("environment", "production");
   }
 
-  // Get log path from store first, fallback to environment variable
-  const logPath = store.get("logPath") || process.env.APP_LOG_PATH;
+  // Initialize paths with smart defaults
+  const initializedPaths = initializePaths(store);
+
+  // Use the initialized log path
+  const logPath = initializedPaths.logPath;
 
   if (logPath) {
     try {
+      // Ensure log directory exists
       const logDir = path.dirname(logPath);
-      if (!fs.existsSync(logDir)) {
-        fs.mkdirSync(logDir, { recursive: true });
+      if (ensureDirectoryExists(logDir)) {
+        log.initialize();
+        log.transports.file.resolvePathFn = () => logPath;
+        log.transports.file.level = "info";
+        log.info(`Logger initialized successfully with path: ${logPath}`);
+        log.info(
+          `Available drives detected and paths configured automatically`
+        );
+      } else {
+        log.warn(
+          `Failed to create log directory, using default logging: ${logDir}`
+        );
       }
-      log.initialize();
-      log.transports.file.resolvePathFn = () => logPath;
-      log.transports.file.level = "info";
-      log.info("Logger initialized successfully with custom path.");
     } catch (error) {
       console.error("Failed to initialize custom logger:", error);
       log.info("Using default logger due to custom path error.");
@@ -91,6 +109,11 @@ function createMainWindow() {
   Menu.setApplicationMenu(menu);
 
   mainWindow.loadURL(FRONTEND_URL);
+  // mainWindow.webContents
+  //   .executeJavaScript("localStorage.getItem('token');")
+  //   .then((token) => {
+  //     console.log("Token from localStorage:", token);
+  //   });
 
   mainWindow.webContents.once("did-finish-load", () => {
     if (loaderWindow && !loaderWindow.isDestroyed()) {
@@ -253,26 +276,23 @@ function registerIpcHandlers() {
 
   // Admin configuration handlers
   ipcMain.handle("admin-get-current-path", () => {
-    const currentPath = store.get("syncPath") || process.env.SYNC_PATH || "";
+    const storedPath = store.get("syncPath");
+    const currentPath =
+      storedPath || getBestAvailablePath(null, "syncPath") || "";
     log.info(`Admin: Current sync path requested: ${currentPath}`);
     return currentPath;
   });
 
   ipcMain.handle("admin-get-password", () => {
-    return process.env.ADMIN_PASSWORD || "admin123";
+    return process.env.ADMIN_PASSWORD || "admin";
   });
 
   ipcMain.handle("admin-save-path", async (event, newPath) => {
     try {
-      // Validate path exists
-      if (!fs.existsSync(newPath)) {
-        return { success: false, error: "Path does not exist" };
-      }
-
-      // Check if path is a directory
-      const stats = fs.statSync(newPath);
-      if (!stats.isDirectory()) {
-        return { success: false, error: "Path is not a directory" };
+      // Use path manager to validate the path
+      const validation = validatePath(newPath, "syncPath");
+      if (!validation.valid) {
+        return { success: false, error: validation.error };
       }
 
       // Save to store
@@ -291,20 +311,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle("admin-test-path", async (event, testPath) => {
     try {
-      if (!fs.existsSync(testPath)) {
-        return { success: false, error: "Path does not exist" };
+      const validation = validatePath(testPath, "syncPath");
+      if (!validation.valid) {
+        return { success: false, error: validation.error };
       }
-
-      const stats = fs.statSync(testPath);
-      if (!stats.isDirectory()) {
-        return { success: false, error: "Path is not a directory" };
-      }
-
-      // Test write permissions
-      const testFile = path.join(testPath, ".test_write_access");
-      fs.writeFileSync(testFile, "test");
-      fs.unlinkSync(testFile);
-
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -313,10 +323,12 @@ function registerIpcHandlers() {
 
   ipcMain.handle("admin-browse-folder", async () => {
     try {
+      const currentPath =
+        store.get("syncPath") || getBestAvailablePath(null, "syncPath");
       const result = await dialog.showOpenDialog(adminWindow, {
         properties: ["openDirectory"],
         title: "Select Sync Folder",
-        defaultPath: store.get("syncPath") || process.env.SYNC_PATH || "C:\\",
+        defaultPath: currentPath || "C:\\",
       });
 
       if (!result.canceled && result.filePaths.length > 0) {
@@ -337,41 +349,27 @@ function registerIpcHandlers() {
 
   // Log path management handlers
   ipcMain.handle("admin-get-current-log-path", () => {
+    const storedLogPath = store.get("logPath");
     const currentLogPath =
-      store.get("logPath") || process.env.APP_LOG_PATH || "";
+      storedLogPath || getBestAvailablePath(null, "logPath") || "";
     log.info(`Admin: Current log path requested: ${currentLogPath}`);
     return currentLogPath;
   });
 
   ipcMain.handle("admin-save-log-path", async (event, newLogPath) => {
     try {
-      // Validate log path directory exists
-      const logDir = path.dirname(newLogPath);
-      if (!fs.existsSync(logDir)) {
-        // Try to create the directory
-        try {
-          fs.mkdirSync(logDir, { recursive: true });
-        } catch (error) {
-          return {
-            success: false,
-            error: `Cannot create log directory: ${error.message}`,
-          };
-        }
-      }
-
-      // Test write permissions
-      try {
-        fs.writeFileSync(newLogPath, "", { flag: "a" }); // Append mode, creates if not exists
-      } catch (error) {
-        return {
-          success: false,
-          error: `Cannot write to log file: ${error.message}`,
-        };
+      // Use path manager to validate the log path
+      const validation = validatePath(newLogPath, "logPath");
+      if (!validation.valid) {
+        return { success: false, error: validation.error };
       }
 
       // Save to store
       store.set("logPath", newLogPath);
       log.info(`Admin: Log path updated to: ${newLogPath}`);
+
+      // Restart logger with new path immediately
+      await restartLogger(newLogPath);
 
       return { success: true };
     } catch (error) {
@@ -382,31 +380,11 @@ function registerIpcHandlers() {
 
   ipcMain.handle("admin-test-log-path", async (event, testLogPath) => {
     try {
-      const logDir = path.dirname(testLogPath);
-
-      // Check if directory exists or can be created
-      if (!fs.existsSync(logDir)) {
-        try {
-          fs.mkdirSync(logDir, { recursive: true });
-        } catch (error) {
-          return {
-            success: false,
-            error: `Cannot create log directory: ${error.message}`,
-          };
-        }
+      const validation = validatePath(testLogPath, "logPath");
+      if (!validation.valid) {
+        return { success: false, error: validation.error };
       }
-
-      // Test write permissions
-      try {
-        const testContent = `Test log entry - ${new Date().toISOString()}\n`;
-        fs.writeFileSync(testLogPath, testContent, { flag: "a" });
-        return { success: true };
-      } catch (error) {
-        return {
-          success: false,
-          error: `Cannot write to log file: ${error.message}`,
-        };
-      }
+      return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -414,9 +392,11 @@ function registerIpcHandlers() {
 
   ipcMain.handle("admin-browse-log-file", async () => {
     try {
+      const currentLogPath =
+        store.get("logPath") || getBestAvailablePath(null, "logPath");
       const result = await dialog.showSaveDialog(adminWindow, {
         title: "Select Log File Location",
-        defaultPath: store.get("logPath") || path.join("C:\\", "app.log"),
+        defaultPath: currentLogPath || path.join("C:\\", "app.log"),
         filters: [
           { name: "Log Files", extensions: ["log"] },
           { name: "Text Files", extensions: ["txt"] },
@@ -474,6 +454,54 @@ function registerIpcHandlers() {
       return { success: false, error: error.message };
     }
   });
+
+  // Path management handlers
+  ipcMain.handle("admin-get-available-drives", () => {
+    try {
+      const drives = getAvailableDrives();
+      log.info(`Admin: Available drives requested: ${JSON.stringify(drives)}`);
+      return drives;
+    } catch (error) {
+      log.error(`Admin: Error getting available drives: ${error.message}`);
+      return [];
+    }
+  });
+
+  ipcMain.handle("admin-get-smart-defaults", () => {
+    try {
+      const systemInfo = getSystemStorageInfo();
+      const defaults = {
+        syncPath: getBestAvailablePath(null, "syncPath"),
+        logPath: getBestAvailablePath(null, "logPath"),
+        systemInfo: systemInfo,
+      };
+      log.info(`Admin: Smart defaults requested: ${JSON.stringify(defaults)}`);
+      return defaults;
+    } catch (error) {
+      log.error(`Admin: Error getting smart defaults: ${error.message}`);
+      return { syncPath: null, logPath: null, systemInfo: null };
+    }
+  });
+
+  // Drive availability check handler
+  ipcMain.handle("admin-check-drive-availability", () => {
+    try {
+      const drives = getAvailableDrives();
+      const systemInfo = getSystemStorageInfo();
+      return {
+        drives: drives,
+        currentSyncPath:
+          store.get("syncPath") || getBestAvailablePath(null, "syncPath"),
+        currentLogPath:
+          store.get("logPath") || getBestAvailablePath(null, "logPath"),
+        systemInfo: systemInfo,
+        timestamp: new Date().toISOString(),
+      };
+    } catch (error) {
+      log.error(`Admin: Error checking drive availability: ${error.message}`);
+      return { error: error.message };
+    }
+  });
 }
 
 app.whenReady().then(() => {
@@ -508,6 +536,28 @@ async function restartFileWatcher(newPath) {
     log.info(`File watcher restarted with path: ${newPath}`);
   } catch (error) {
     log.error(`Error restarting file watcher: ${error.message}`);
+    throw error;
+  }
+}
+
+// Function to restart logger with new log path
+async function restartLogger(newLogPath) {
+  try {
+    // Ensure log directory exists
+    const logDir = path.dirname(newLogPath);
+    if (!ensureDirectoryExists(logDir)) {
+      throw new Error(`Cannot create log directory: ${logDir}`);
+    }
+
+    // Reconfigure the logger with new path
+    log.transports.file.resolvePathFn = () => newLogPath;
+    log.transports.file.level = "info";
+
+    // Write a message to confirm the switch
+    log.info(`Logger restarted with new path: ${newLogPath}`);
+    log.info("Log path updated successfully - no restart required!");
+  } catch (error) {
+    log.error(`Error restarting logger: ${error.message}`);
     throw error;
   }
 }

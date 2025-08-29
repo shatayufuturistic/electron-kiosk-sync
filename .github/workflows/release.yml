@@ -1,0 +1,80 @@
+name: Production Release Build
+
+on:
+  push:
+    branches:
+      - main # Triggers on pushes to main branch for production releases
+    tags:
+      - "v*" # Also triggers on version tags like v1.0.0, v1.2.3, etc.
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  build-production-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for proper versioning
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Auto-bump version for main branch
+        if: github.ref == 'refs/heads/main' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          npm version patch --no-git-tag-version
+          $new_version = node -p "require('./package.json').version"
+          echo "NEW_VERSION=v$new_version" >> $env:GITHUB_ENV
+          git add package.json package-lock.json
+          git commit -m "chore: bump version to $new_version [skip ci]"
+          git tag "v$new_version"
+          git push origin main
+          git push origin "v$new_version"
+        shell: pwsh
+
+      - name: Get version for tagged release
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $tag_version = "${{ github.ref_name }}"
+          echo "NEW_VERSION=$tag_version" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Create .env file for Windows build
+        run: |
+          echo "ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}" >> .env
+          echo "PROD_FRONTEND_URL=${{ secrets.PROD_FRONTEND_URL }}" >> .env
+          echo "STAGING_FRONTEND_URL=${{ secrets.STAGING_FRONTEND_URL }}" >> .env
+          echo "PROD_BACKEND_URL=${{ secrets.PROD_BACKEND_URL }}" >> .env
+          echo "STAGING_BACKEND_URL=${{ secrets.STAGING_BACKEND_URL }}" >> .env
+          echo "ACCESS_KEY_ID=${{ secrets.ACCESS_KEY_ID }}" >> .env
+          echo "SECRET_ACCESS_KEY=${{ secrets.SECRET_ACCESS_KEY }}" >> .env
+          echo "BUCKET_NAME=${{ secrets.BUCKET_NAME }}" >> .env
+          echo "LOG_PATH=${{ secrets.LOG_PATH }}" >> .env
+        shell: bash
+
+      - name: Build Windows executable and publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run publish
+
+      - name: Upload Production Windows build artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: production-windows-build-${{ env.NEW_VERSION || github.sha }}
+          path: |
+            dist/*.exe
+            dist/latest.yml
+            dist/*.blockmap
+          retention-days: 90

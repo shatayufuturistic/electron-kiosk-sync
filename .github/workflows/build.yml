@@ -1,0 +1,51 @@
+name: Development Build Test
+
+on:
+  push:
+    branches: [master, develop, feature/*, hotfix/*]
+    # Exclude main branch as it triggers production releases
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  build-development:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create test .env file for Windows
+        run: |
+          echo "ADMIN_PASSWORD=test123" >> .env
+          echo "PROD_FRONTEND_URL=https://example.com" >> .env
+          echo "STAGING_FRONTEND_URL=https://staging.example.com" >> .env
+          echo "PROD_BACKEND_URL=https://api.example.com" >> .env
+          echo "STAGING_BACKEND_URL=https://staging-api.example.com" >> .env
+          echo "ACCESS_KEY_ID=test_key" >> .env
+          echo "SECRET_ACCESS_KEY=test_secret" >> .env
+          echo "BUCKET_NAME=test-bucket" >> .env
+          echo "LOG_PATH=D:\\test\\logs\\app.log" >> .env
+        shell: bash
+
+      - name: Build Windows application (without publishing)
+        run: npm run build-for-release
+
+      - name: Upload Development build test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: development-build-test-artifacts
+          path: |
+            dist/*.exe
+            dist/latest.yml
+            dist/*.blockmap
+          retention-days: 7
