@@ -4,9 +4,11 @@ const {
   BrowserWindow,
   ipcMain,
   Menu,
-  MenuItem,
   dialog,
+  systemPreferences,
+  session,
 } = require("electron");
+
 const { autoUpdater } = require("electron-updater");
 const path = require("node:path");
 const log = require("electron-log");
@@ -92,28 +94,25 @@ function createLoaderWindow() {
 const menu = Menu.buildFromTemplate(menuTemplate);
 
 function createMainWindow() {
+  const preloadPath = path.join(__dirname, "preload.js");
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     show: false,
     webPreferences: {
       contextIsolation: true,
+      preload: preloadPath,
     },
   });
   const env = store.get("environment");
-  const FRONTEND_URL =
-    env === "staging"
-      ? process.env.STAGING_FRONTEND_URL
-      : process.env.PROD_FRONTEND_URL;
-  // mainWindow.setMenu(menu);
+  const FRONTEND_URL = "http://localhost:5173";
+  // env === "staging"
+  //   ? process.env.STAGING_FRONTEND_URL
+  //   : process.env.PROD_FRONTEND_URL;
   Menu.setApplicationMenu(menu);
 
   mainWindow.loadURL(FRONTEND_URL);
-  // mainWindow.webContents
-  //   .executeJavaScript("localStorage.getItem('token');")
-  //   .then((token) => {
-  //     console.log("Token from localStorage:", token);
-  //   });
 
   mainWindow.webContents.once("did-finish-load", () => {
     if (loaderWindow && !loaderWindow.isDestroyed()) {
@@ -202,9 +201,17 @@ function createAdminWindow() {
       webSecurity: true,
     },
   });
-
+  session.defaultSession.setPermissionRequestHandler(
+    (webContents, permission, callback) => {
+      if (permission === "media") {
+        callback(true); // Grant camera/mic access
+      } else {
+        callback(false);
+      }
+    }
+  );
   adminWindow.setMenu(null);
-  adminWindow.loadFile(path.join(__dirname, "admin-config.html"));
+  adminWindow.loadFile(path.join(__dirname, "page", "admin-config.html"));
 
   adminWindow.once("ready-to-show", () => {
     adminWindow.show();
@@ -502,6 +509,65 @@ function registerIpcHandlers() {
       return { error: error.message };
     }
   });
+
+  // Device configuration handlers
+  ipcMain.handle("admin-get-available-devices", async () => {
+    try {
+      // Get available media devices
+      const devices = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+
+      console.log({ devices, isData: true });
+
+      return devices;
+    } catch (error) {
+      log.error(`Admin: Error getting available devices: ${error.message}`);
+      return {
+        cameras: [],
+        audioInputs: [],
+        audioOutputs: [],
+        error: error.message,
+      };
+    }
+  });
+
+  ipcMain.handle("admin-get-device-configuration", () => {
+    try {
+      const config = store.get("deviceConfiguration") || {
+        videoCall: "",
+        dermoscope: "",
+        optoscope: "",
+        stethoscope: "",
+      };
+      log.info(
+        `Admin: Device configuration requested: ${JSON.stringify(config)}`
+      );
+      return config;
+    } catch (error) {
+      log.error(`Admin: Error getting device configuration: ${error.message}`);
+      return null;
+    }
+  });
+
+  ipcMain.handle("admin-save-device-configuration", async (event, config) => {
+    try {
+      // Validate the configuration structure
+      if (!config || typeof config !== "object") {
+        return { success: false, error: "Invalid configuration format" };
+      }
+
+      // Save to store
+      store.set("deviceConfiguration", config);
+      log.info(`Admin: Device configuration saved: ${JSON.stringify(config)}`);
+
+      return { success: true };
+    } catch (error) {
+      log.error(`Admin: Error saving device configuration: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  });
 }
 
 app.whenReady().then(() => {
@@ -561,6 +627,24 @@ async function restartLogger(newLogPath) {
     throw error;
   }
 }
+
+const deviceConfig = {
+  videoConference: "abcd-camera-device-id", // deviceId of camera
+  stethoscopeMic: "xyz-mic-device-id", // deviceId of microphone
+};
+
+ipcMain.on("auth-token", (event, token) => {
+  console.log("🔑 Token received from React:", token);
+  authToken = token;
+
+  // ✅ Optional: persist securely
+  const store = new Store();
+  store.set("authToken", token);
+});
+
+ipcMain.handle("get-device-config", () => {
+  return deviceConfig;
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

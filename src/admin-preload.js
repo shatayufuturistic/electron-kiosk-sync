@@ -40,6 +40,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   checkDriveAvailability: () =>
     ipcRenderer.invoke("admin-check-drive-availability"),
 
+  // Device configuration APIs
+  getAvailableDevices: () => ipcRenderer.invoke("admin-get-available-devices"),
+  getDeviceConfiguration: () => ipcRenderer.invoke("admin-get-device-configuration"),
+  saveDeviceConfiguration: (config) => ipcRenderer.invoke("admin-save-device-configuration", config),
+
   // Close admin window
   closeWindow: () => ipcRenderer.send("admin-close-window"),
 });
