@@ -281,5 +281,114 @@
         </div>
       </div>
     </div>
+
+    <!-- Device Test Modal -->
+    <div
+      id="deviceTestModal"
+      class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center"
+    >
+      <div
+        class="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto"
+      >
+        <div class="flex justify-between items-center mb-4">
+          <h3 id="testModalTitle" class="text-lg font-semibold text-gray-800">
+            Device Test
+          </h3>
+          <button
+            id="closeTestModal"
+            class="text-gray-500 hover:text-gray-700 text-2xl"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <!-- Video Preview -->
+          <div id="videoTestSection" class="bg-gray-50 rounded-lg p-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">
+              📹 Video Preview
+            </h4>
+            <div
+              class="relative bg-black rounded-lg overflow-hidden"
+              style="aspect-ratio: 16/9"
+            >
+              <video
+                id="testVideo"
+                class="w-full h-full object-cover"
+                autoplay
+                muted
+              ></video>
+              <div
+                id="videoStatus"
+                class="absolute inset-0 flex items-center justify-center text-white bg-black bg-opacity-50"
+              >
+                <span class="text-sm">No video signal</span>
+              </div>
+            </div>
+            <div class="mt-2 flex gap-2">
+              <button
+                id="startVideoTest"
+                class="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+              >
+                ▶️ Start Video
+              </button>
+              <button
+                id="stopVideoTest"
+                class="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+              >
+                ⏹️ Stop Video
+              </button>
+            </div>
+          </div>
+
+          <!-- Audio Visualization -->
+          <div id="audioTestSection" class="bg-gray-50 rounded-lg p-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">
+              🎤 Audio Waveform
+            </h4>
+            <div class="bg-black rounded-lg p-2" style="height: 200px">
+              <canvas id="audioCanvas" class="w-full h-full"></canvas>
+            </div>
+            <div class="mt-2 flex gap-2">
+              <button
+                id="startAudioTest"
+                class="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700"
+              >
+                🎤 Start Audio
+              </button>
+              <button
+                id="stopAudioTest"
+                class="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+              >
+                🔇 Stop Audio
+              </button>
+            </div>
+            <div id="audioLevel" class="mt-2 text-xs text-gray-600">
+              Audio Level: <span id="audioLevelValue">0%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Test Results -->
+        <div
+          id="testResults"
+          class="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200"
+        >
+          <h4 class="text-sm font-semibold text-blue-800 mb-2">Test Results</h4>
+          <div id="testResultsContent" class="text-xs text-blue-700">
+            Click "Start Video" and "Start Audio" to begin testing your devices.
+          </div>
+        </div>
+
+        <div class="mt-4 flex justify-end">
+          <button
+            id="closeTestModalBtn"
+            class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
+          >
+            Close Test
+          </button>
+        </div>
+      </div>
+    </div>
   </body>
 </html>

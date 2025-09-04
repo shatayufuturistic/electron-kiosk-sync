@@ -109,6 +109,9 @@ class AdminConfigApp {
   }
 
   async switchTab(tabName) {
+    // Clean up previous tab
+    this.cleanupCurrentTab();
+
     this.currentTab = tabName;
 
     if (tabName === "system") {
@@ -117,6 +120,21 @@ class AdminConfigApp {
     } else if (tabName === "device") {
       await this.loadDeviceConfigTab();
       this.updateTabStyles("device");
+    }
+  }
+
+  cleanupCurrentTab() {
+    // Clean up device config modal if it exists
+    const existingModal = document.getElementById("deviceTestModal");
+    if (existingModal && existingModal.parentNode === document.body) {
+      document.body.removeChild(existingModal);
+    }
+
+    // Clean up any active streams or contexts
+    if (this.deviceConfig) {
+      if (typeof this.deviceConfig.stopAllTests === "function") {
+        this.deviceConfig.stopAllTests();
+      }
     }
   }
 
@@ -212,15 +230,27 @@ class AdminConfigApp {
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, "text/html");
       const content = doc.getElementById("deviceConfigContent");
+      const modal = doc.getElementById("deviceTestModal");
 
       if (content && this.elements.tabContentContainer) {
         // Clear current content and load new content
         this.elements.tabContentContainer.innerHTML = content.innerHTML;
 
-        // Initialize device config module
+        // Append modal to body if it exists and isn't already there
+        if (modal && !document.getElementById("deviceTestModal")) {
+          document.body.appendChild(modal);
+        }
+
+        // Initialize device config module with a small delay to ensure DOM is ready
         if (window.DeviceConfigModule) {
-          this.deviceConfig = new window.DeviceConfigModule();
-          await this.deviceConfig.initialize();
+          // Wait for next tick to ensure DOM elements are rendered
+          setTimeout(async () => {
+            this.deviceConfig = new window.DeviceConfigModule();
+            await this.deviceConfig.initialize();
+
+            // Make it globally accessible
+            window.deviceConfig = this.deviceConfig;
+          }, 100);
         }
       }
     } catch (error) {
@@ -254,6 +284,9 @@ class AdminConfigApp {
   }
 
   logout() {
+    // Clean up current tab
+    this.cleanupCurrentTab();
+
     // Reset form inputs
     if (this.elements.passwordInput) {
       this.elements.passwordInput.value = "";

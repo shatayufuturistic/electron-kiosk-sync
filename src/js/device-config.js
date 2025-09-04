@@ -13,8 +13,11 @@ class DeviceConfigModule {
       optoscope: "",
       stethoscope: "",
     };
-    this.initializeElements();
-    this.attachEventListeners();
+    this.currentTestStream = null;
+    this.audioContext = null;
+    this.analyser = null;
+    this.animationId = null;
+    this.initialized = false;
   }
 
   initializeElements() {
@@ -55,47 +58,75 @@ class DeviceConfigModule {
     this.elements.resetDeviceConfig =
       document.getElementById("resetDeviceConfig");
     this.elements.testAllDevices = document.getElementById("testAllDevices");
+
+    // Test modal elements
+    this.elements.deviceTestModal = document.getElementById("deviceTestModal");
+    this.elements.testModalTitle = document.getElementById("testModalTitle");
+    this.elements.closeTestModal = document.getElementById("closeTestModal");
+    this.elements.closeTestModalBtn =
+      document.getElementById("closeTestModalBtn");
+    this.elements.testVideo = document.getElementById("testVideo");
+    this.elements.videoStatus = document.getElementById("videoStatus");
+    this.elements.audioCanvas = document.getElementById("audioCanvas");
+    this.elements.startVideoTest = document.getElementById("startVideoTest");
+    this.elements.stopVideoTest = document.getElementById("stopVideoTest");
+    this.elements.startAudioTest = document.getElementById("startAudioTest");
+    this.elements.stopAudioTest = document.getElementById("stopAudioTest");
+    this.elements.audioLevelValue = document.getElementById("audioLevelValue");
+    this.elements.testResultsContent =
+      document.getElementById("testResultsContent");
   }
 
   async attachEventListeners() {
     // Refresh devices
     if (this.elements.refreshDevices) {
       this.elements.refreshDevices.addEventListener("click", async () => {
-        this.loadAvailableDevices();
-        console.log("REFRESHING BUTTON CLIEKED .......................... ");
-
-        // const mediaStream = await navigator.mediaDevices.getUserMedia({
-        //   video: true,
-        //   audio: true,
-        // });
-
-        // console.log({ mediaStream, isData: true });
+        this.showDeviceMessage("Refreshing devices...", "info");
+        await this.loadAvailableDevices();
       });
     }
 
     // Test device configurations
+    console.log("Setting up test button event listeners...");
+    console.log("testVideoCall element:", this.elements.testVideoCall);
+    console.log("testDermoscope element:", this.elements.testDermoscope);
+    console.log("testOtoscope element:", this.elements.testOtoscope);
+    console.log("testStethoscope element:", this.elements.testStethoscope);
+
     if (this.elements.testVideoCall) {
       this.elements.testVideoCall.addEventListener("click", () => {
+        console.log("Video Call test button clicked");
         this.testDeviceConfiguration("videoCall");
       });
+    } else {
+      console.error("testVideoCall button not found!");
     }
 
     if (this.elements.testDermoscope) {
       this.elements.testDermoscope.addEventListener("click", () => {
+        console.log("Dermoscope test button clicked");
         this.testDeviceConfiguration("dermoscope");
       });
+    } else {
+      console.error("testDermoscope button not found!");
     }
 
     if (this.elements.testOtoscope) {
       this.elements.testOtoscope.addEventListener("click", () => {
+        console.log("Otoscope test button clicked");
         this.testDeviceConfiguration("otoscope");
       });
+    } else {
+      console.error("testOtoscope button not found!");
     }
 
     if (this.elements.testStethoscope) {
       this.elements.testStethoscope.addEventListener("click", () => {
+        console.log("Stethoscope test button clicked");
         this.testDeviceConfiguration("stethoscope");
       });
+    } else {
+      console.error("testStethoscope button not found!");
     }
 
     // Action buttons
@@ -120,41 +151,142 @@ class DeviceConfigModule {
         this.testAllDeviceConfigurations();
       });
     }
+
+    // Test modal event listeners
+    if (this.elements.closeTestModal) {
+      this.elements.closeTestModal.addEventListener("click", () => {
+        this.closeTestModal();
+      });
+    }
+
+    if (this.elements.closeTestModalBtn) {
+      this.elements.closeTestModalBtn.addEventListener("click", () => {
+        this.closeTestModal();
+      });
+    }
+
+    if (this.elements.startVideoTest) {
+      this.elements.startVideoTest.addEventListener("click", () => {
+        this.startVideoTest();
+      });
+    }
+
+    if (this.elements.stopVideoTest) {
+      this.elements.stopVideoTest.addEventListener("click", () => {
+        this.stopVideoTest();
+      });
+    }
+
+    if (this.elements.startAudioTest) {
+      this.elements.startAudioTest.addEventListener("click", () => {
+        this.startAudioTest();
+      });
+    }
+
+    if (this.elements.stopAudioTest) {
+      this.elements.stopAudioTest.addEventListener("click", () => {
+        this.stopAudioTest();
+      });
+    }
+
+    // Close modal when clicking outside
+    if (this.elements.deviceTestModal) {
+      this.elements.deviceTestModal.addEventListener("click", (e) => {
+        if (e.target === this.elements.deviceTestModal) {
+          this.closeTestModal();
+        }
+      });
+    }
   }
 
   async loadDeviceConfiguration() {
     try {
-      if (window.electronAPI.getDeviceConfiguration) {
+      if (window.electronAPI && window.electronAPI.getDeviceConfiguration) {
         const config = await window.electronAPI.getDeviceConfiguration();
         if (config) {
+          this.deviceConfiguration = { ...this.deviceConfiguration, ...config };
+          this.populateDeviceSelections();
+        }
+      } else {
+        // Fallback: load from local storage
+        const storedConfig = localStorage.getItem("deviceConfiguration");
+        if (storedConfig) {
+          const config = JSON.parse(storedConfig);
           this.deviceConfiguration = { ...this.deviceConfiguration, ...config };
           this.populateDeviceSelections();
         }
       }
     } catch (error) {
       console.warn("Could not load device configuration:", error);
+      // Try local storage as fallback
+      try {
+        const storedConfig = localStorage.getItem("deviceConfiguration");
+        if (storedConfig) {
+          const config = JSON.parse(storedConfig);
+          this.deviceConfiguration = { ...this.deviceConfiguration, ...config };
+          this.populateDeviceSelections();
+        }
+      } catch (fallbackError) {
+        console.warn(
+          "Could not load from local storage either:",
+          fallbackError
+        );
+      }
     }
   }
 
   async loadAvailableDevices() {
     try {
-      if (window.electronAPI.getAvailableDevices) {
-        this.availableDevices = await window.electronAPI.getAvailableDevices();
-        this.updateDeviceDisplays();
-        this.populateDeviceSelectors();
-      } else {
-        // Fallback for when API is not available
+      console.log("called");
+
+      // First request permissions to access media devices
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
+      });
+      console.log("stream", stream);
+
+      // Stop the stream immediately as we only needed it for permissions
+      stream.getTracks().forEach((track) => track.stop());
+
+      // Now enumerate all available devices
+      const devices = await navigator.mediaDevices.enumerateDevices();
+
+      // Categorize devices
+      this.availableDevices = {
+        cameras: devices.filter((device) => device.kind === "videoinput"),
+        audioInputs: devices.filter((device) => device.kind === "audioinput"),
+        audioOutputs: devices.filter((device) => device.kind === "audiooutput"),
+      };
+
+      console.log("Available devices:", this.availableDevices);
+
+      this.updateDeviceDisplays();
+      this.populateDeviceSelectors();
+
+      this.showDeviceMessage(
+        `Found ${this.availableDevices.cameras.length} cameras, ${this.availableDevices.audioInputs.length} audio inputs, ${this.availableDevices.audioOutputs.length} audio outputs`,
+        "success"
+      );
+    } catch (error) {
+      console.error("Error loading devices:", error);
+
+      if (error.name === "NotAllowedError") {
         this.showDeviceMessage(
-          "Device enumeration API not available. Please ensure proper permissions.",
+          "Camera/microphone access denied. Please allow permissions and try again.",
+          "error"
+        );
+      } else if (error.name === "NotFoundError") {
+        this.showDeviceMessage(
+          "No camera or microphone found on this device.",
+          "error"
+        );
+      } else {
+        this.showDeviceMessage(
+          "Error loading devices: " + error.message,
           "error"
         );
       }
-    } catch (error) {
-      console.error("Error loading devices:", error);
-      this.showDeviceMessage(
-        "Error loading devices: " + error.message,
-        "error"
-      );
     }
   }
 
@@ -169,9 +301,9 @@ class DeviceConfigModule {
           .map(
             (camera, index) => `
                         <div class="bg-white p-1.5 rounded border border-gray-200 flex items-center justify-between">
-                            <span class="font-mono text-xs">${
-                              camera.label || `Camera ${index + 1}`
-                            }</span>
+                            <span class="font-mono text-xs" title="${
+                              camera.deviceId
+                            }">${camera.label || `Camera ${index + 1}`}</span>
                             <span class="text-green-600 text-xs">📷</span>
                         </div>
                     `
@@ -179,7 +311,7 @@ class DeviceConfigModule {
           .join("");
       } else {
         this.elements.cameraDevices.innerHTML =
-          '<div class="text-gray-500">No cameras detected</div>';
+          '<div class="text-gray-500 text-center py-2">No cameras detected</div>';
       }
     }
 
@@ -201,9 +333,11 @@ class DeviceConfigModule {
           .map(
             (device, index) => `
                         <div class="bg-white p-1.5 rounded border border-gray-200 flex items-center justify-between">
-                            <span class="font-mono text-xs">${
-                              device.label || `Audio Device ${index + 1}`
-                            }</span>
+                            <span class="font-mono text-xs" title="${
+                              device.deviceId
+                            }">${
+              device.label || `Audio Device ${index + 1}`
+            }</span>
                             <span class="text-blue-600 text-xs">${
                               device.type === "input" ? "🎤" : "🔊"
                             }</span>
@@ -213,7 +347,7 @@ class DeviceConfigModule {
           .join("");
       } else {
         this.elements.audioDevices.innerHTML =
-          '<div class="text-gray-500">No audio devices detected</div>';
+          '<div class="text-gray-500 text-center py-2">No audio devices detected</div>';
       }
     }
   }
@@ -359,30 +493,40 @@ class DeviceConfigModule {
     };
 
     try {
-      if (window.electronAPI.saveDeviceConfiguration) {
-        const result = await window.electronAPI.saveDeviceConfiguration(config);
-        if (result.success) {
-          this.deviceConfiguration = config;
-          this.showDeviceMessage(
-            "Device configuration saved successfully!",
-            "success"
+      let saved = false;
+
+      // Try to save via Electron API first
+      if (window.electronAPI && window.electronAPI.saveDeviceConfiguration) {
+        try {
+          const result = await window.electronAPI.saveDeviceConfiguration(
+            config
           );
-        } else {
-          this.showDeviceMessage(
-            "Failed to save device configuration: " +
-              (result.error || "Unknown error"),
-            "error"
-          );
+          if (result.success) {
+            saved = true;
+            this.showDeviceMessage(
+              "Device configuration saved successfully!",
+              "success"
+            );
+          } else {
+            console.warn("Electron API save failed:", result.error);
+          }
+        } catch (apiError) {
+          console.warn("Electron API error:", apiError);
         }
-      } else {
-        // Fallback: store in local storage
+      }
+      console.log({ config });
+
+      // Fallback to local storage if Electron API failed or is not available
+      if (!saved) {
         localStorage.setItem("deviceConfiguration", JSON.stringify(config));
-        this.deviceConfiguration = config;
         this.showDeviceMessage(
           "Device configuration saved locally!",
           "success"
         );
       }
+
+      // Update local configuration
+      this.deviceConfiguration = config;
     } catch (error) {
       this.showDeviceMessage(
         "Error saving device configuration: " + error.message,
@@ -418,6 +562,8 @@ class DeviceConfigModule {
   }
 
   testDeviceConfiguration(deviceType) {
+    console.log("testDeviceConfiguration called with:", deviceType);
+
     const deviceNames = {
       videoCall: "Video Call Setup",
       dermoscope: "Dermoscope Setup",
@@ -425,10 +571,9 @@ class DeviceConfigModule {
       stethoscope: "Stethoscope Setup",
     };
 
-    this.showDeviceMessage(
-      `Testing ${deviceNames[deviceType]}... This feature will be implemented in future versions.`,
-      "info"
-    );
+    this.currentDeviceType = deviceType;
+    console.log("Opening test modal for:", deviceNames[deviceType]);
+    this.openTestModal(deviceNames[deviceType]);
   }
 
   testAllDeviceConfigurations() {
@@ -436,6 +581,365 @@ class DeviceConfigModule {
       "Testing all device configurations... This feature will be implemented in future versions.",
       "info"
     );
+  }
+
+  openTestModal(deviceName) {
+    console.log("openTestModal called with:", deviceName);
+    console.log("Initialized:", this.initialized);
+
+    // Re-initialize elements if they're missing
+    if (!this.elements.deviceTestModal) {
+      console.log("Modal element missing, re-initializing elements...");
+      this.initializeElements();
+    }
+
+    // Double-check that modal exists in DOM
+    const modalElement = document.getElementById("deviceTestModal");
+    const titleElement = document.getElementById("testModalTitle");
+
+    if (modalElement && titleElement) {
+      // Update our element references
+      this.elements.deviceTestModal = modalElement;
+      this.elements.testModalTitle = titleElement;
+
+      // Set title and show modal
+      titleElement.textContent = `Testing ${deviceName}`;
+      modalElement.classList.remove("hidden");
+      this.resetTestModal();
+      console.log("Modal opened successfully");
+    } else {
+      console.error("Modal elements not found in DOM!");
+      console.log("Modal in DOM:", modalElement);
+      console.log("Title in DOM:", titleElement);
+
+      // Show fallback error message
+      this.showDeviceMessage(
+        "Test modal could not be opened. Please refresh the page and try again.",
+        "error"
+      );
+    }
+  }
+
+  closeTestModal() {
+    if (this.elements.deviceTestModal) {
+      this.elements.deviceTestModal.classList.add("hidden");
+      this.stopAllTests();
+    }
+  }
+
+  resetTestModal() {
+    // Reset video
+    if (this.elements.testVideo) {
+      this.elements.testVideo.srcObject = null;
+    }
+    if (this.elements.videoStatus) {
+      this.elements.videoStatus.style.display = "flex";
+      this.elements.videoStatus.querySelector("span").textContent =
+        "No video signal";
+    }
+
+    // Reset audio canvas
+    if (this.elements.audioCanvas) {
+      const canvas = this.elements.audioCanvas;
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Reset audio level
+    if (this.elements.audioLevelValue) {
+      this.elements.audioLevelValue.textContent = "0%";
+    }
+
+    // Reset test results
+    if (this.elements.testResultsContent) {
+      this.elements.testResultsContent.textContent =
+        'Click "Start Video" and "Start Audio" to begin testing your devices.';
+    }
+  }
+
+  async startVideoTest() {
+    try {
+      const deviceConfig = this.getSelectedDeviceConfig();
+      const cameraId = deviceConfig.camera;
+
+      if (!cameraId) {
+        this.updateTestResults("Please select a camera device first.", "error");
+        return;
+      }
+
+      const constraints = {
+        video: {
+          deviceId: { exact: cameraId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      if (this.elements.testVideo) {
+        this.elements.testVideo.srcObject = stream;
+        this.elements.videoStatus.style.display = "none";
+      }
+
+      // Store stream for cleanup
+      if (this.currentTestStream) {
+        this.currentTestStream.getTracks().forEach((track) => track.stop());
+      }
+      this.currentTestStream = stream;
+
+      this.updateTestResults(
+        "Video test started successfully. You should see the camera feed above.",
+        "success"
+      );
+    } catch (error) {
+      console.error("Video test error:", error);
+      this.updateTestResults(`Video test failed: ${error.message}`, "error");
+    }
+  }
+
+  stopVideoTest() {
+    if (this.currentTestStream) {
+      const videoTracks = this.currentTestStream.getVideoTracks();
+      videoTracks.forEach((track) => track.stop());
+    }
+
+    if (this.elements.testVideo) {
+      this.elements.testVideo.srcObject = null;
+    }
+    if (this.elements.videoStatus) {
+      this.elements.videoStatus.style.display = "flex";
+      this.elements.videoStatus.querySelector("span").textContent =
+        "Video stopped";
+    }
+
+    this.updateTestResults("Video test stopped.", "info");
+  }
+
+  async startAudioTest() {
+    try {
+      const deviceConfig = this.getSelectedDeviceConfig();
+      const audioId =
+        deviceConfig.audio || deviceConfig.microphone || deviceConfig.primary;
+
+      if (!audioId) {
+        this.updateTestResults("Please select an audio device first.", "error");
+        return;
+      }
+
+      const constraints = {
+        audio: {
+          deviceId: { exact: audioId },
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+      // Set up audio context and analyser
+      this.audioContext = new (window.AudioContext ||
+        window.webkitAudioContext)();
+      this.analyser = this.audioContext.createAnalyser();
+      const source = this.audioContext.createMediaStreamSource(stream);
+      source.connect(this.analyser);
+
+      this.analyser.fftSize = 2048;
+      const bufferLength = this.analyser.frequencyBinCount;
+      const dataArray = new Uint8Array(bufferLength);
+
+      // Store stream for cleanup
+      if (this.currentTestStream) {
+        const audioTracks = this.currentTestStream.getAudioTracks();
+        audioTracks.forEach((track) => track.stop());
+      } else {
+        this.currentTestStream = stream;
+      }
+
+      // Add audio tracks to existing stream or create new one
+      const audioTracks = stream.getAudioTracks();
+      audioTracks.forEach((track) => {
+        if (this.currentTestStream && this.currentTestStream !== stream) {
+          // Can't add tracks to existing stream, so we'll manage separately
+        }
+      });
+
+      this.startAudioVisualization(dataArray);
+      this.updateTestResults(
+        "Audio test started successfully. You should see the waveform visualization above.",
+        "success"
+      );
+    } catch (error) {
+      console.error("Audio test error:", error);
+      this.updateTestResults(`Audio test failed: ${error.message}`, "error");
+    }
+  }
+
+  startAudioVisualization(dataArray) {
+    const canvas = this.elements.audioCanvas;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+
+    const draw = () => {
+      if (!this.analyser) return;
+
+      this.animationId = requestAnimationFrame(draw);
+
+      this.analyser.getByteFrequencyData(dataArray);
+
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const barWidth = (canvas.width / dataArray.length) * 2.5;
+      let barHeight;
+      let x = 0;
+
+      // Calculate average volume for level indicator
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / dataArray.length;
+      const percentage = Math.round((average / 255) * 100);
+
+      if (this.elements.audioLevelValue) {
+        this.elements.audioLevelValue.textContent = `${percentage}%`;
+      }
+
+      // Draw frequency bars
+      for (let i = 0; i < dataArray.length; i++) {
+        barHeight = (dataArray[i] / 255) * canvas.height;
+
+        const red = Math.floor((dataArray[i] / 255) * 255);
+        const green = Math.floor(255 - red);
+        const blue = 50;
+
+        ctx.fillStyle = `rgb(${red},${green},${blue})`;
+        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
+
+        x += barWidth + 1;
+      }
+
+      // Draw waveform line
+      ctx.strokeStyle = "#00ff00";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+
+      const sliceWidth = canvas.width / dataArray.length;
+      let x2 = 0;
+
+      for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = (v * canvas.height) / 2;
+
+        if (i === 0) {
+          ctx.moveTo(x2, y);
+        } else {
+          ctx.lineTo(x2, y);
+        }
+
+        x2 += sliceWidth;
+      }
+
+      ctx.stroke();
+    };
+
+    draw();
+  }
+
+  stopAudioTest() {
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
+    }
+
+    if (this.analyser) {
+      this.analyser = null;
+    }
+
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+
+    if (this.currentTestStream) {
+      const audioTracks = this.currentTestStream.getAudioTracks();
+      audioTracks.forEach((track) => track.stop());
+    }
+
+    // Clear canvas
+    if (this.elements.audioCanvas) {
+      const canvas = this.elements.audioCanvas;
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    if (this.elements.audioLevelValue) {
+      this.elements.audioLevelValue.textContent = "0%";
+    }
+
+    this.updateTestResults("Audio test stopped.", "info");
+  }
+
+  stopAllTests() {
+    this.stopVideoTest();
+    this.stopAudioTest();
+
+    if (this.currentTestStream) {
+      this.currentTestStream.getTracks().forEach((track) => track.stop());
+      this.currentTestStream = null;
+    }
+  }
+
+  getSelectedDeviceConfig() {
+    const deviceType = this.currentDeviceType;
+
+    switch (deviceType) {
+      case "videoCall":
+        return {
+          camera: this.elements.videoCallCamera?.value,
+          microphone: this.elements.videoCallMicrophone?.value,
+          speaker: this.elements.videoCallSpeaker?.value,
+        };
+      case "dermoscope":
+        return {
+          camera: this.elements.dermoscopeCamera?.value,
+          audio: this.elements.dermoscopeAudio?.value,
+        };
+      case "otoscope":
+        return {
+          camera: this.elements.otoscopeCamera?.value,
+          audio: this.elements.otoscopeAudio?.value,
+        };
+      case "stethoscope":
+        return {
+          primary: this.elements.stethoscopePrimary?.value,
+          secondary: this.elements.stethoscopeSecondary?.value,
+        };
+      default:
+        return {};
+    }
+  }
+
+  updateTestResults(message, type = "info") {
+    if (!this.elements.testResultsContent) return;
+
+    const timestamp = new Date().toLocaleTimeString();
+    const icon = type === "error" ? "❌" : type === "success" ? "✅" : "ℹ️";
+
+    this.elements.testResultsContent.innerHTML = `
+      <div class="flex items-start gap-2 mb-1">
+        <span>${icon}</span>
+        <div>
+          <span class="font-semibold">[${timestamp}]</span> ${message}
+        </div>
+      </div>
+      ${this.elements.testResultsContent.innerHTML}
+    `;
   }
 
   showDeviceMessage(message, type = "info") {
@@ -459,10 +963,52 @@ class DeviceConfigModule {
     }
   }
 
+  // Listen for device changes
+  setupDeviceChangeListener() {
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      navigator.mediaDevices.addEventListener("devicechange", async () => {
+        console.log("Device change detected, refreshing device list...");
+        this.showDeviceMessage(
+          "Device change detected, refreshing list...",
+          "info"
+        );
+        await this.loadAvailableDevices();
+      });
+    }
+  }
+
   // Public method to initialize the module
   async initialize() {
-    await this.loadDeviceConfiguration();
-    await this.loadAvailableDevices();
+    if (this.initialized) {
+      console.log("DeviceConfigModule already initialized");
+      return;
+    }
+
+    try {
+      console.log("Initializing DeviceConfigModule...");
+
+      // Initialize DOM elements first
+      this.initializeElements();
+
+      // Check if critical elements exist
+      if (!this.elements.deviceTestModal) {
+        console.error("Critical modal elements not found in DOM");
+        return;
+      }
+
+      // Attach event listeners
+      await this.attachEventListeners();
+
+      // Load configuration and devices
+      await this.loadDeviceConfiguration();
+      await this.loadAvailableDevices();
+      this.setupDeviceChangeListener();
+
+      this.initialized = true;
+      console.log("DeviceConfigModule initialized successfully");
+    } catch (error) {
+      console.error("Error during DeviceConfigModule initialization:", error);
+    }
   }
 }
 
@@ -471,4 +1017,34 @@ if (typeof module !== "undefined" && module.exports) {
   module.exports = DeviceConfigModule;
 } else {
   window.DeviceConfigModule = DeviceConfigModule;
+}
+
+// Initialize when DOM is ready
+if (typeof window !== "undefined") {
+  let deviceConfigInstance = null;
+
+  function initializeDeviceConfig() {
+    if (deviceConfigInstance) return deviceConfigInstance;
+
+    try {
+      deviceConfigInstance = new DeviceConfigModule();
+      deviceConfigInstance.initialize();
+      console.log("DeviceConfigModule initialized successfully");
+      return deviceConfigInstance;
+    } catch (error) {
+      console.error("Failed to initialize DeviceConfigModule:", error);
+      return null;
+    }
+  }
+
+  // Initialize when DOM is ready
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeDeviceConfig);
+  } else {
+    // DOM is already ready
+    initializeDeviceConfig();
+  }
+
+  // Also expose the initializer globally
+  window.initializeDeviceConfig = initializeDeviceConfig;
 }

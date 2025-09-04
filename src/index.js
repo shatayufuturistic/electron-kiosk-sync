@@ -510,27 +510,16 @@ function registerIpcHandlers() {
     }
   });
 
-  // Device configuration handlers
+  // Device configuration handlers - This will be handled in renderer process
   ipcMain.handle("admin-get-available-devices", async () => {
-    try {
-      // Get available media devices
-      const devices = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
-      });
-
-      console.log({ devices, isData: true });
-
-      return devices;
-    } catch (error) {
-      log.error(`Admin: Error getting available devices: ${error.message}`);
-      return {
-        cameras: [],
-        audioInputs: [],
-        audioOutputs: [],
-        error: error.message,
-      };
-    }
+    // This handler exists for compatibility but actual device enumeration
+    // should be done in the renderer process where navigator.mediaDevices is available
+    return {
+      message: "Device enumeration should be handled in renderer process",
+      cameras: [],
+      audioInputs: [],
+      audioOutputs: [],
+    };
   });
 
   ipcMain.handle("admin-get-device-configuration", () => {

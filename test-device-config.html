@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Device Config Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body>
+    <div class="p-4">
+      <h1 class="text-2xl font-bold mb-4">Device Configuration Test</h1>
+      <button
+        id="loadDeviceConfig"
+        class="bg-blue-500 text-white px-4 py-2 rounded"
+      >
+        Load Device Config
+      </button>
+      <div id="content" class="mt-4"></div>
+    </div>
+
+    <script>
+      document
+        .getElementById("loadDeviceConfig")
+        .addEventListener("click", async () => {
+          try {
+            // Load the device config HTML
+            const response = await fetch("./src/page/device-config.html");
+            const html = await response.text();
+
+            // Parse and insert content
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, "text/html");
+            const content = doc.getElementById("deviceConfigContent");
+
+            if (content) {
+              document.getElementById("content").innerHTML = content.innerHTML;
+
+              // Load the device config script
+              const script = document.createElement("script");
+              script.src = "./src/js/device-config.js";
+              script.onload = () => {
+                // Initialize after script loads
+                setTimeout(() => {
+                  if (window.DeviceConfigModule) {
+                    const deviceConfig = new window.DeviceConfigModule();
+                    deviceConfig.initialize();
+                    console.log("DeviceConfigModule initialized successfully");
+                  }
+                }, 100);
+              };
+              document.head.appendChild(script);
+            }
+          } catch (error) {
+            console.error("Error loading device config:", error);
+          }
+        });
+    </script>
+  </body>
+</html>
