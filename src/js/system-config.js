@@ -52,6 +52,25 @@ class SystemConfigModule {
     // Action buttons
     this.elements.logoutBtn = document.getElementById("logoutBtn");
     this.elements.restartAppBtn = document.getElementById("restartAppBtn");
+
+    // System configuration management elements
+    this.elements.saveSystemConfig =
+      document.getElementById("saveSystemConfig");
+    this.elements.exportSystemConfig =
+      document.getElementById("exportSystemConfig");
+    this.elements.resetSystemConfig =
+      document.getElementById("resetSystemConfig");
+    this.elements.systemConfigStatus =
+      document.getElementById("systemConfigStatus");
+    this.elements.configSummary = document.getElementById("configSummary");
+    this.elements.summaryEnvironment =
+      document.getElementById("summaryEnvironment");
+    this.elements.summaryVersion = document.getElementById("summaryVersion");
+    this.elements.summarySyncPath = document.getElementById("summarySyncPath");
+    this.elements.summaryLogPath = document.getElementById("summaryLogPath");
+    this.elements.summaryLastSaved =
+      document.getElementById("summaryLastSaved");
+    this.elements.summaryStatus = document.getElementById("summaryStatus");
   }
 
   attachEventListeners() {
@@ -249,6 +268,31 @@ class SystemConfigModule {
           )
         ) {
           window.electronAPI.restartApp();
+        }
+      });
+    }
+
+    // System configuration management event listeners
+    if (this.elements.saveSystemConfig) {
+      this.elements.saveSystemConfig.addEventListener("click", () => {
+        this.saveSystemConfiguration();
+      });
+    }
+
+    if (this.elements.exportSystemConfig) {
+      this.elements.exportSystemConfig.addEventListener("click", () => {
+        this.exportSystemConfiguration();
+      });
+    }
+
+    if (this.elements.resetSystemConfig) {
+      this.elements.resetSystemConfig.addEventListener("click", () => {
+        if (
+          confirm(
+            "Are you sure you want to reset all system settings to defaults? This action cannot be undone."
+          )
+        ) {
+          this.resetSystemConfiguration();
         }
       });
     }
@@ -482,9 +526,215 @@ class SystemConfigModule {
     }
   }
 
+  async saveSystemConfiguration() {
+    try {
+      this.showSystemConfigMessage("Saving system configuration...", "info");
+
+      // Collect all current system configuration
+      const systemConfig = {
+        environment: await window.electronAPI.getCurrentEnvironment(),
+        syncPath: await window.electronAPI.getCurrentPath(),
+        logPath: await window.electronAPI.getCurrentLogPath(),
+        version: await window.electronAPI.getVersion(),
+        timestamp: new Date().toISOString(),
+        driveInfo: await window.electronAPI.checkDriveAvailability(),
+      };
+
+      // Save configuration via Electron API
+      const result = await window.electronAPI.saveSystemConfiguration(
+        systemConfig
+      );
+
+      if (result && result.success) {
+        this.showSystemConfigMessage(
+          "System configuration saved successfully!",
+          "success"
+        );
+        this.updateConfigurationSummary(systemConfig);
+        this.showConfigurationSummary();
+      } else {
+        // Fallback to localStorage if Electron API is not available
+        localStorage.setItem(
+          "systemConfiguration",
+          JSON.stringify(systemConfig)
+        );
+        this.showSystemConfigMessage(
+          "System configuration saved locally!",
+          "success"
+        );
+        this.updateConfigurationSummary(systemConfig);
+        this.showConfigurationSummary();
+      }
+    } catch (error) {
+      console.error("Error saving system configuration:", error);
+      this.showSystemConfigMessage(
+        `Error saving system configuration: ${error.message}`,
+        "error"
+      );
+    }
+  }
+
+  async exportSystemConfiguration() {
+    try {
+      this.showSystemConfigMessage("Exporting system configuration...", "info");
+
+      // Collect all current system configuration
+      const systemConfig = {
+        environment: await window.electronAPI.getCurrentEnvironment(),
+        syncPath: await window.electronAPI.getCurrentPath(),
+        logPath: await window.electronAPI.getCurrentLogPath(),
+        version: await window.electronAPI.getVersion(),
+        timestamp: new Date().toISOString(),
+        driveInfo: await window.electronAPI.checkDriveAvailability(),
+        exportedAt: new Date().toLocaleString(),
+      };
+
+      // Create downloadable JSON file
+      const configJson = JSON.stringify(systemConfig, null, 2);
+      const blob = new Blob([configJson], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `system-config-${
+        new Date().toISOString().split("T")[0]
+      }.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      this.showSystemConfigMessage(
+        "System configuration exported successfully!",
+        "success"
+      );
+    } catch (error) {
+      console.error("Error exporting system configuration:", error);
+      this.showSystemConfigMessage(
+        `Error exporting system configuration: ${error.message}`,
+        "error"
+      );
+    }
+  }
+
+  async resetSystemConfiguration() {
+    try {
+      this.showSystemConfigMessage("Resetting system configuration...", "info");
+
+      // Get smart defaults
+      const smartDefaults = await window.electronAPI.getSmartDefaults();
+
+      // Reset to defaults
+      if (smartDefaults.syncPath) {
+        await this.saveSyncPath(smartDefaults.syncPath);
+      }
+
+      if (smartDefaults.logPath) {
+        await this.saveLogPath(smartDefaults.logPath);
+      }
+
+      // Switch to production environment
+      await this.switchEnvironment("production");
+
+      // Clear saved configuration
+      localStorage.removeItem("systemConfiguration");
+
+      this.showSystemConfigMessage(
+        "System configuration reset to defaults successfully! Application will restart.",
+        "success"
+      );
+
+      // Hide configuration summary
+      this.hideConfigurationSummary();
+
+      // Restart after a delay
+      setTimeout(() => {
+        window.electronAPI.restartApp();
+      }, 3000);
+    } catch (error) {
+      console.error("Error resetting system configuration:", error);
+      this.showSystemConfigMessage(
+        `Error resetting system configuration: ${error.message}`,
+        "error"
+      );
+    }
+  }
+
+  updateConfigurationSummary(config) {
+    if (this.elements.summaryEnvironment) {
+      this.elements.summaryEnvironment.textContent =
+        config.environment || "Unknown";
+    }
+    if (this.elements.summaryVersion) {
+      this.elements.summaryVersion.textContent = config.version || "Unknown";
+    }
+    if (this.elements.summarySyncPath) {
+      this.elements.summarySyncPath.textContent =
+        config.syncPath || "Not configured";
+    }
+    if (this.elements.summaryLogPath) {
+      this.elements.summaryLogPath.textContent =
+        config.logPath || "Not configured";
+    }
+    if (this.elements.summaryLastSaved) {
+      this.elements.summaryLastSaved.textContent = new Date(
+        config.timestamp
+      ).toLocaleString();
+    }
+    if (this.elements.summaryStatus) {
+      this.elements.summaryStatus.textContent = "✓ Saved";
+      this.elements.summaryStatus.className = "ml-1 text-green-600";
+    }
+  }
+
+  showConfigurationSummary() {
+    if (this.elements.configSummary) {
+      this.elements.configSummary.classList.remove("hidden");
+    }
+  }
+
+  hideConfigurationSummary() {
+    if (this.elements.configSummary) {
+      this.elements.configSummary.classList.add("hidden");
+    }
+  }
+
+  showSystemConfigMessage(message, type = "info") {
+    const statusEl = this.elements.systemConfigStatus;
+    if (!statusEl) return;
+
+    statusEl.className = `mt-2 p-2 rounded text-xs ${
+      type === "error"
+        ? "bg-red-50 border-l-4 border-red-500 text-red-700"
+        : type === "success"
+        ? "bg-green-50 border-l-4 border-green-500 text-green-700"
+        : "bg-blue-50 border-l-4 border-blue-500 text-blue-700"
+    }`;
+    statusEl.textContent = message;
+    statusEl.classList.remove("hidden");
+
+    if (type === "success") {
+      setTimeout(() => {
+        statusEl.classList.add("hidden");
+      }, 5000);
+    }
+  }
+
   // Public method to initialize the module
   async initialize() {
     await this.loadCurrentPaths();
+
+    // Try to load and display saved configuration
+    try {
+      const savedConfig = localStorage.getItem("systemConfiguration");
+      if (savedConfig) {
+        const config = JSON.parse(savedConfig);
+        this.updateConfigurationSummary(config);
+        this.showConfigurationSummary();
+      }
+    } catch (error) {
+      console.warn("Could not load saved system configuration:", error);
+    }
   }
 }
 

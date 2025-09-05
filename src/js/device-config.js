@@ -14,6 +14,7 @@ class DeviceConfigModule {
       stethoscope: "",
     };
     this.currentTestStream = null;
+    this.currentAudioStream = null;
     this.audioContext = null;
     this.analyser = null;
     this.animationId = null;
@@ -57,7 +58,8 @@ class DeviceConfigModule {
       document.getElementById("saveDeviceConfig");
     this.elements.resetDeviceConfig =
       document.getElementById("resetDeviceConfig");
-    this.elements.testAllDevices = document.getElementById("testAllDevices");
+    this.elements.exportDeviceConfig =
+      document.getElementById("exportDeviceConfig");
 
     // Test modal elements
     this.elements.deviceTestModal = document.getElementById("deviceTestModal");
@@ -146,9 +148,9 @@ class DeviceConfigModule {
       });
     }
 
-    if (this.elements.testAllDevices) {
-      this.elements.testAllDevices.addEventListener("click", () => {
-        this.testAllDeviceConfigurations();
+    if (this.elements.exportDeviceConfig) {
+      this.elements.exportDeviceConfig.addEventListener("click", () => {
+        this.exportDeviceConfiguration();
       });
     }
 
@@ -319,14 +321,19 @@ class DeviceConfigModule {
     if (this.elements.audioDevices) {
       const allAudioDevices = [
         ...(this.availableDevices.audioInputs || []).map((device) => ({
-          ...device,
-          type: "input",
+          ...device, // Spread all properties (deviceId, kind, label, groupId)
+          type: "input", // Add type property
+          label: device.label,
         })),
         ...(this.availableDevices.audioOutputs || []).map((device) => ({
-          ...device,
-          type: "output",
+          ...device, // Spread all properties (deviceId, kind, label, groupId)
+          type: "output", // Add type property
+          label: device.label,
         })),
       ];
+      console.log({ audioOutputs: this.availableDevices.audioOutputs });
+      console.log({ audioInputs: this.availableDevices.audioInputs });
+      console.log({ allAudioDevices });
 
       if (allAudioDevices.length > 0) {
         this.elements.audioDevices.innerHTML = allAudioDevices
@@ -576,11 +583,61 @@ class DeviceConfigModule {
     this.openTestModal(deviceNames[deviceType]);
   }
 
-  testAllDeviceConfigurations() {
-    this.showDeviceMessage(
-      "Testing all device configurations... This feature will be implemented in future versions.",
-      "info"
-    );
+  async exportDeviceConfiguration() {
+    try {
+      this.showDeviceMessage("Exporting device configuration...", "info");
+
+      // Collect current device configuration
+      const deviceConfig = {
+        videoCall: {
+          camera: this.elements.videoCallCamera?.value || "",
+          microphone: this.elements.videoCallMicrophone?.value || "",
+          speaker: this.elements.videoCallSpeaker?.value || "",
+        },
+        dermoscope: {
+          camera: this.elements.dermoscopeCamera?.value || "",
+          audio: this.elements.dermoscopeAudio?.value || "",
+        },
+        otoscope: {
+          camera: this.elements.otoscopeCamera?.value || "",
+          audio: this.elements.otoscopeAudio?.value || "",
+        },
+        stethoscope: {
+          primary: this.elements.stethoscopePrimary?.value || "",
+          secondary: this.elements.stethoscopeSecondary?.value || "",
+        },
+        availableDevices: this.availableDevices,
+        timestamp: new Date().toISOString(),
+        exportedAt: new Date().toLocaleString(),
+        version: "1.0.0",
+      };
+
+      // Create downloadable JSON file
+      const configJson = JSON.stringify(deviceConfig, null, 2);
+      const blob = new Blob([configJson], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `device-config-${
+        new Date().toISOString().split("T")[0]
+      }.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      this.showDeviceMessage(
+        "Device configuration exported successfully!",
+        "success"
+      );
+    } catch (error) {
+      console.error("Error exporting device configuration:", error);
+      this.showDeviceMessage(
+        `Error exporting device configuration: ${error.message}`,
+        "error"
+      );
+    }
   }
 
   openTestModal(deviceName) {
@@ -699,9 +756,13 @@ class DeviceConfigModule {
   }
 
   stopVideoTest() {
+    // Stop video stream completely
     if (this.currentTestStream) {
-      const videoTracks = this.currentTestStream.getVideoTracks();
-      videoTracks.forEach((track) => track.stop());
+      this.currentTestStream.getTracks().forEach((track) => {
+        track.stop();
+        console.log("Video track stopped:", track.label);
+      });
+      this.currentTestStream = null;
     }
 
     if (this.elements.testVideo) {
@@ -713,7 +774,7 @@ class DeviceConfigModule {
         "Video stopped";
     }
 
-    this.updateTestResults("Video test stopped.", "info");
+    this.updateTestResults("Video test stopped and stream released.", "info");
   }
 
   async startAudioTest() {
@@ -749,21 +810,13 @@ class DeviceConfigModule {
       const bufferLength = this.analyser.frequencyBinCount;
       const dataArray = new Uint8Array(bufferLength);
 
-      // Store stream for cleanup
-      if (this.currentTestStream) {
-        const audioTracks = this.currentTestStream.getAudioTracks();
-        audioTracks.forEach((track) => track.stop());
-      } else {
-        this.currentTestStream = stream;
+      // Stop any existing audio stream
+      if (this.currentAudioStream) {
+        this.currentAudioStream.getTracks().forEach((track) => track.stop());
       }
 
-      // Add audio tracks to existing stream or create new one
-      const audioTracks = stream.getAudioTracks();
-      audioTracks.forEach((track) => {
-        if (this.currentTestStream && this.currentTestStream !== stream) {
-          // Can't add tracks to existing stream, so we'll manage separately
-        }
-      });
+      // Store the new audio stream
+      this.currentAudioStream = stream;
 
       this.startAudioVisualization(dataArray);
       this.updateTestResults(
@@ -852,6 +905,7 @@ class DeviceConfigModule {
   }
 
   stopAudioTest() {
+    // Stop audio context
     if (this.audioContext) {
       this.audioContext.close();
       this.audioContext = null;
@@ -861,14 +915,19 @@ class DeviceConfigModule {
       this.analyser = null;
     }
 
+    // Stop animation
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
     }
 
-    if (this.currentTestStream) {
-      const audioTracks = this.currentTestStream.getAudioTracks();
-      audioTracks.forEach((track) => track.stop());
+    // Stop audio stream completely
+    if (this.currentAudioStream) {
+      this.currentAudioStream.getTracks().forEach((track) => {
+        track.stop();
+        console.log("Audio track stopped:", track.label);
+      });
+      this.currentAudioStream = null;
     }
 
     // Clear canvas
@@ -882,17 +941,25 @@ class DeviceConfigModule {
       this.elements.audioLevelValue.textContent = "0%";
     }
 
-    this.updateTestResults("Audio test stopped.", "info");
+    this.updateTestResults("Audio test stopped and stream released.", "info");
   }
 
   stopAllTests() {
     this.stopVideoTest();
     this.stopAudioTest();
 
+    // Ensure all streams are stopped
     if (this.currentTestStream) {
       this.currentTestStream.getTracks().forEach((track) => track.stop());
       this.currentTestStream = null;
     }
+
+    if (this.currentAudioStream) {
+      this.currentAudioStream.getTracks().forEach((track) => track.stop());
+      this.currentAudioStream = null;
+    }
+
+    console.log("All media streams stopped and released");
   }
 
   getSelectedDeviceConfig() {

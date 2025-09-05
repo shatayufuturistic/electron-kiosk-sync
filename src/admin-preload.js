@@ -42,8 +42,16 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   // Device configuration APIs
   getAvailableDevices: () => ipcRenderer.invoke("admin-get-available-devices"),
-  getDeviceConfiguration: () => ipcRenderer.invoke("admin-get-device-configuration"),
-  saveDeviceConfiguration: (config) => ipcRenderer.invoke("admin-save-device-configuration", config),
+  getDeviceConfiguration: () =>
+    ipcRenderer.invoke("admin-get-device-configuration"),
+  saveDeviceConfiguration: (config) =>
+    ipcRenderer.invoke("admin-save-device-configuration", config),
+
+  // System configuration APIs
+  saveSystemConfiguration: (config) =>
+    ipcRenderer.invoke("admin-save-system-configuration", config),
+  getSystemConfiguration: () =>
+    ipcRenderer.invoke("admin-get-system-configuration"),
 
   // Close admin window
   closeWindow: () => ipcRenderer.send("admin-close-window"),

@@ -557,6 +557,36 @@ function registerIpcHandlers() {
       return { success: false, error: error.message };
     }
   });
+
+  // System configuration handlers
+  ipcMain.handle("admin-save-system-configuration", async (event, config) => {
+    try {
+      // Validate the configuration structure
+      if (!config || typeof config !== "object") {
+        return { success: false, error: "Invalid system configuration format" };
+      }
+
+      // Save to store
+      store.set("systemConfiguration", config);
+      log.info(`Admin: System configuration saved: ${JSON.stringify(config)}`);
+
+      return { success: true };
+    } catch (error) {
+      log.error(`Admin: Error saving system configuration: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle("admin-get-system-configuration", () => {
+    try {
+      const config = store.get("systemConfiguration") || null;
+      log.info(`Admin: System configuration requested`);
+      return config;
+    } catch (error) {
+      log.error(`Admin: Error getting system configuration: ${error.message}`);
+      return null;
+    }
+  });
 }
 
 app.whenReady().then(() => {
