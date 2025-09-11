@@ -203,21 +203,28 @@ class DeviceConfigModule {
 
   async loadDeviceConfiguration() {
     try {
+      console.log("Loading device configuration...");
+
       if (window.electronAPI && window.electronAPI.getDeviceConfiguration) {
         const config = await window.electronAPI.getDeviceConfiguration();
         if (config) {
-          this.deviceConfiguration = { ...this.deviceConfiguration, ...config };
-          this.populateDeviceSelections();
+          console.log("Loaded config from Electron API:", config);
+          // Extract device configurations from the full config object
+          this.deviceConfiguration = this.extractDeviceConfig(config);
         }
       } else {
         // Fallback: load from local storage
         const storedConfig = localStorage.getItem("deviceConfiguration");
         if (storedConfig) {
           const config = JSON.parse(storedConfig);
-          this.deviceConfiguration = { ...this.deviceConfiguration, ...config };
-          this.populateDeviceSelections();
+          console.log("Loaded config from localStorage:", config);
+          // Extract device configurations from the full config object
+          this.deviceConfiguration = this.extractDeviceConfig(config);
         }
       }
+
+      // Note: Don't call populateDeviceSelections() here - it will be called after devices are loaded
+      console.log("Device configuration loaded:", this.deviceConfiguration);
     } catch (error) {
       console.warn("Could not load device configuration:", error);
       // Try local storage as fallback
@@ -225,8 +232,9 @@ class DeviceConfigModule {
         const storedConfig = localStorage.getItem("deviceConfiguration");
         if (storedConfig) {
           const config = JSON.parse(storedConfig);
-          this.deviceConfiguration = { ...this.deviceConfiguration, ...config };
-          this.populateDeviceSelections();
+          console.log("Loaded config from localStorage fallback:", config);
+          // Extract device configurations from the full config object
+          this.deviceConfiguration = this.extractDeviceConfig(config);
         }
       } catch (fallbackError) {
         console.warn(
@@ -237,34 +245,86 @@ class DeviceConfigModule {
     }
   }
 
+  // Helper method to extract device configuration from full config object
+  extractDeviceConfig(fullConfig) {
+    // If it's already in the old simple format, use it directly
+    if (fullConfig.videoCall && !fullConfig.availableDevices) {
+      return fullConfig;
+    }
+
+    // If it's the new detailed format, extract just the device configurations
+    const deviceConfig = {
+      videoCall: fullConfig.videoCall || "",
+      dermoscope: fullConfig.dermoscope || "",
+      optoscope: fullConfig.optoscope || "",
+      stethoscope: fullConfig.stethoscope || "",
+    };
+
+    // Also store the metadata for reference
+    if (fullConfig.availableDevices) {
+      this.savedAvailableDevices = fullConfig.availableDevices;
+    }
+    if (fullConfig.timestamp) {
+      this.lastSavedTimestamp = fullConfig.timestamp;
+    }
+
+    console.log("Extracted device config:", deviceConfig);
+    return deviceConfig;
+  }
+
   async loadAvailableDevices() {
     try {
-      console.log("called");
+      console.log("Loading available devices...");
 
       // First request permissions to access media devices
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
       });
-      console.log("stream", stream);
+      console.log("Media permissions granted, stream:", stream);
 
       // Stop the stream immediately as we only needed it for permissions
       stream.getTracks().forEach((track) => track.stop());
 
       // Now enumerate all available devices
       const devices = await navigator.mediaDevices.enumerateDevices();
+      console.log("Raw devices from enumerateDevices:", devices);
 
-      // Categorize devices
+      // Categorize devices and ensure we have all properties
       this.availableDevices = {
-        cameras: devices.filter((device) => device.kind === "videoinput"),
-        audioInputs: devices.filter((device) => device.kind === "audioinput"),
-        audioOutputs: devices.filter((device) => device.kind === "audiooutput"),
+        cameras: devices
+          .filter((device) => device.kind === "videoinput")
+          .map((device) => ({
+            deviceId: device.deviceId,
+            kind: device.kind,
+            label: device.label,
+            groupId: device.groupId,
+          })),
+        audioInputs: devices
+          .filter((device) => device.kind === "audioinput")
+          .map((device) => ({
+            deviceId: device.deviceId,
+            kind: device.kind,
+            label: device.label,
+            groupId: device.groupId,
+          })),
+        audioOutputs: devices
+          .filter((device) => device.kind === "audiooutput")
+          .map((device) => ({
+            deviceId: device.deviceId,
+            kind: device.kind,
+            label: device.label,
+            groupId: device.groupId,
+          })),
       };
 
-      console.log("Available devices:", this.availableDevices);
+      console.log("Processed available devices:", this.availableDevices);
 
       this.updateDeviceDisplays();
       this.populateDeviceSelectors();
+
+      // IMPORTANT: Apply saved selections AFTER populating selectors
+      this.populateDeviceSelections();
 
       this.showDeviceMessage(
         `Found ${this.availableDevices.cameras.length} cameras, ${this.availableDevices.audioInputs.length} audio inputs, ${this.availableDevices.audioOutputs.length} audio outputs`,
@@ -331,9 +391,6 @@ class DeviceConfigModule {
           label: device.label,
         })),
       ];
-      console.log({ audioOutputs: this.availableDevices.audioOutputs });
-      console.log({ audioInputs: this.availableDevices.audioInputs });
-      console.log({ allAudioDevices });
 
       if (allAudioDevices.length > 0) {
         this.elements.audioDevices.innerHTML = allAudioDevices
@@ -432,53 +489,96 @@ class DeviceConfigModule {
   }
 
   populateDeviceSelections() {
-    // Populate saved configurations
+    console.log(
+      "Populating device selections with config:",
+      this.deviceConfiguration
+    );
+
+    // Video Call Configuration
     if (this.deviceConfiguration.videoCall) {
       const videoCallConfig = this.deviceConfiguration.videoCall;
+      console.log("Applying video call config:", videoCallConfig);
+
       if (this.elements.videoCallCamera && videoCallConfig.camera) {
         this.elements.videoCallCamera.value = videoCallConfig.camera;
+        console.log("Set video call camera to:", videoCallConfig.camera);
       }
       if (this.elements.videoCallMicrophone && videoCallConfig.microphone) {
         this.elements.videoCallMicrophone.value = videoCallConfig.microphone;
+        console.log(
+          "Set video call microphone to:",
+          videoCallConfig.microphone
+        );
       }
       if (this.elements.videoCallSpeaker && videoCallConfig.speaker) {
         this.elements.videoCallSpeaker.value = videoCallConfig.speaker;
+        console.log("Set video call speaker to:", videoCallConfig.speaker);
       }
     }
 
+    // Dermoscope Configuration
     if (this.deviceConfiguration.dermoscope) {
       const dermoscopeConfig = this.deviceConfiguration.dermoscope;
+      console.log("Applying dermoscope config:", dermoscopeConfig);
+
       if (this.elements.dermoscopeCamera && dermoscopeConfig.camera) {
         this.elements.dermoscopeCamera.value = dermoscopeConfig.camera;
+        console.log("Set dermoscope camera to:", dermoscopeConfig.camera);
       }
       if (this.elements.dermoscopeAudio && dermoscopeConfig.audio) {
         this.elements.dermoscopeAudio.value = dermoscopeConfig.audio;
+        console.log("Set dermoscope audio to:", dermoscopeConfig.audio);
       }
     }
 
+    // Otoscope Configuration (note: checking for 'optoscope' in config but using 'otoscope' elements)
     if (this.deviceConfiguration.optoscope) {
       const otoscopeConfig = this.deviceConfiguration.optoscope;
+      console.log("Applying otoscope config:", otoscopeConfig);
+
       if (this.elements.otoscopeCamera && otoscopeConfig.camera) {
         this.elements.otoscopeCamera.value = otoscopeConfig.camera;
+        console.log("Set otoscope camera to:", otoscopeConfig.camera);
       }
       if (this.elements.otoscopeAudio && otoscopeConfig.audio) {
         this.elements.otoscopeAudio.value = otoscopeConfig.audio;
+        console.log("Set otoscope audio to:", otoscopeConfig.audio);
       }
     }
 
+    // Stethoscope Configuration
     if (this.deviceConfiguration.stethoscope) {
       const stethoscopeConfig = this.deviceConfiguration.stethoscope;
+      console.log("Applying stethoscope config:", stethoscopeConfig);
+
       if (this.elements.stethoscopePrimary && stethoscopeConfig.primary) {
         this.elements.stethoscopePrimary.value = stethoscopeConfig.primary;
+        console.log("Set stethoscope primary to:", stethoscopeConfig.primary);
       }
       if (this.elements.stethoscopeSecondary && stethoscopeConfig.secondary) {
         this.elements.stethoscopeSecondary.value = stethoscopeConfig.secondary;
+        console.log(
+          "Set stethoscope secondary to:",
+          stethoscopeConfig.secondary
+        );
       }
     }
+
+    console.log("Device selections populated successfully");
   }
 
   async saveDeviceConfiguration() {
-    // Collect current device selections
+    // Ensure devices are loaded before saving
+    if (
+      !this.availableDevices ||
+      !this.availableDevices.cameras ||
+      this.availableDevices.cameras.length === 0
+    ) {
+      console.warn("No devices loaded, refreshing device list before save...");
+      await this.loadAvailableDevices();
+    }
+
+    // Collect current device selections with full metadata (same format as export)
     const config = {
       videoCall: {
         camera: this.elements.videoCallCamera?.value || "",
@@ -497,9 +597,21 @@ class DeviceConfigModule {
         primary: this.elements.stethoscopePrimary?.value || "",
         secondary: this.elements.stethoscopeSecondary?.value || "",
       },
+      // Include all metadata like in export
+      availableDevices: this.availableDevices || {
+        cameras: [],
+        audioInputs: [],
+        audioOutputs: [],
+      },
+      timestamp: new Date().toISOString(),
+      savedAt: new Date().toLocaleString(),
+      version: "1.0.0",
+      lastModified: Date.now(),
     };
 
     try {
+      console.log("Saving device configuration with full metadata:", config);
+      console.log("Available devices at save time:", this.availableDevices);
       let saved = false;
 
       // Try to save via Electron API first
@@ -510,6 +622,7 @@ class DeviceConfigModule {
           );
           if (result.success) {
             saved = true;
+            console.log("Device configuration saved via Electron API");
             this.showDeviceMessage(
               "Device configuration saved successfully!",
               "success"
@@ -521,11 +634,11 @@ class DeviceConfigModule {
           console.warn("Electron API error:", apiError);
         }
       }
-      console.log({ config });
 
       // Fallback to local storage if Electron API failed or is not available
       if (!saved) {
         localStorage.setItem("deviceConfiguration", JSON.stringify(config));
+        console.log("Device configuration saved to localStorage");
         this.showDeviceMessage(
           "Device configuration saved locally!",
           "success"
@@ -534,7 +647,15 @@ class DeviceConfigModule {
 
       // Update local configuration
       this.deviceConfiguration = config;
+      console.log(
+        "Local device configuration updated:",
+        this.deviceConfiguration
+      );
+
+      // Show detailed success message
+      this.showDetailedSaveMessage(config);
     } catch (error) {
+      console.error("Error saving device configuration:", error);
       this.showDeviceMessage(
         "Error saving device configuration: " + error.message,
         "error"
@@ -587,7 +708,7 @@ class DeviceConfigModule {
     try {
       this.showDeviceMessage("Exporting device configuration...", "info");
 
-      // Collect current device configuration
+      // Collect current device configuration (same format as save)
       const deviceConfig = {
         videoCall: {
           camera: this.elements.videoCallCamera?.value || "",
@@ -598,7 +719,7 @@ class DeviceConfigModule {
           camera: this.elements.dermoscopeCamera?.value || "",
           audio: this.elements.dermoscopeAudio?.value || "",
         },
-        otoscope: {
+        optoscope: {
           camera: this.elements.otoscopeCamera?.value || "",
           audio: this.elements.otoscopeAudio?.value || "",
         },
@@ -606,10 +727,16 @@ class DeviceConfigModule {
           primary: this.elements.stethoscopePrimary?.value || "",
           secondary: this.elements.stethoscopeSecondary?.value || "",
         },
-        availableDevices: this.availableDevices,
+        availableDevices: this.availableDevices || {
+          cameras: [],
+          audioInputs: [],
+          audioOutputs: [],
+        },
         timestamp: new Date().toISOString(),
         exportedAt: new Date().toLocaleString(),
         version: "1.0.0",
+        lastModified: Date.now(),
+        exportType: "manual", // Distinguish from auto-save
       };
 
       // Create downloadable JSON file
@@ -1030,6 +1157,41 @@ class DeviceConfigModule {
     }
   }
 
+  showDetailedSaveMessage(config) {
+    const statusEl = this.elements.deviceConfigStatus;
+    if (!statusEl) return;
+
+    // Count configured devices
+    let configuredCount = 0;
+    const deviceTypes = ["videoCall", "dermoscope", "optoscope", "stethoscope"];
+
+    deviceTypes.forEach((type) => {
+      const deviceConfig = config[type];
+      if (deviceConfig && typeof deviceConfig === "object") {
+        const hasConfig = Object.values(deviceConfig).some(
+          (value) => value && value.trim() !== ""
+        );
+        if (hasConfig) configuredCount++;
+      }
+    });
+
+    const message = `✅ Configuration saved successfully! 
+📊 ${configuredCount}/${deviceTypes.length} device types configured
+🕒 Saved at: ${config.savedAt}
+📱 ${config.availableDevices?.cameras?.length || 0} cameras, ${
+      config.availableDevices?.audioInputs?.length || 0
+    } audio inputs detected`;
+
+    statusEl.className =
+      "mt-2 p-3 rounded text-xs bg-green-50 border-l-4 border-green-500 text-green-700";
+    statusEl.innerHTML = message.replace(/\n/g, "<br>");
+    statusEl.classList.remove("hidden");
+
+    setTimeout(() => {
+      statusEl.classList.add("hidden");
+    }, 8000); // Show longer for detailed message
+  }
+
   // Listen for device changes
   setupDeviceChangeListener() {
     if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
@@ -1066,9 +1228,13 @@ class DeviceConfigModule {
       // Attach event listeners
       await this.attachEventListeners();
 
-      // Load configuration and devices
+      // Load configuration first (before loading devices)
       await this.loadDeviceConfiguration();
+
+      // Then load available devices (this will also populate selections)
       await this.loadAvailableDevices();
+
+      // Setup device change listener
       this.setupDeviceChangeListener();
 
       this.initialized = true;

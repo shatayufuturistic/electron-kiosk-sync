@@ -26,6 +26,8 @@ const {
   getSystemStorageInfo,
   validatePath,
 } = require("./utils/pathManager");
+const { default: axios } = require("axios");
+const { addKioskSystemConfig, getKioskConfig } = require("./utils/configApi");
 const envPath = path.join(process.resourcesPath, "app/.env");
 dotenv.config({ path: fs.existsSync(envPath) ? envPath : ".env" });
 const store = getStore();
@@ -92,6 +94,7 @@ function createLoaderWindow() {
 // Function to switch environment and restart
 
 const menu = Menu.buildFromTemplate(menuTemplate);
+const env = store.get("environment");
 
 function createMainWindow() {
   const preloadPath = path.join(__dirname, "preload.js");
@@ -105,11 +108,11 @@ function createMainWindow() {
       preload: preloadPath,
     },
   });
-  const env = store.get("environment");
-  const FRONTEND_URL = "http://localhost:5173";
-  // env === "staging"
-  //   ? process.env.STAGING_FRONTEND_URL
-  //   : process.env.PROD_FRONTEND_URL;
+  // const FRONTEND_URL = "http://localhost:5173/";
+  const FRONTEND_URL =
+    env === "staging"
+      ? process.env.STAGING_FRONTEND_URL
+      : process.env.PROD_FRONTEND_URL;
   Menu.setApplicationMenu(menu);
 
   mainWindow.loadURL(FRONTEND_URL);
@@ -213,11 +216,19 @@ function createAdminWindow() {
   adminWindow.setMenu(null);
   adminWindow.loadFile(path.join(__dirname, "page", "admin-config.html"));
 
-  adminWindow.once("ready-to-show", () => {
+  adminWindow.once("ready-to-show", async () => {
     adminWindow.show();
     adminWindow.maximize();
     adminWindow.focus();
     log.info("Admin window opened in full-screen mode");
+    const token = store.get("authToken") || null;
+
+    const BACKEND_URL =
+      env === "staging"
+        ? process.env.STAGING_BACKEND_URL
+        : process.env.PROD_BACKEND_URL;
+    const res = await getKioskConfig({ BACKEND_URL, token });
+    console.log({ res });
   });
 
   adminWindow.on("closed", () => {
@@ -522,7 +533,7 @@ function registerIpcHandlers() {
     };
   });
 
-  ipcMain.handle("admin-get-device-configuration", () => {
+  ipcMain.handle("admin-get-device-configuration", async () => {
     try {
       const config = store.get("deviceConfiguration") || {
         videoCall: "",
@@ -533,6 +544,7 @@ function registerIpcHandlers() {
       log.info(
         `Admin: Device configuration requested: ${JSON.stringify(config)}`
       );
+
       return config;
     } catch (error) {
       log.error(`Admin: Error getting device configuration: ${error.message}`);
@@ -550,7 +562,19 @@ function registerIpcHandlers() {
       // Save to store
       store.set("deviceConfiguration", config);
       log.info(`Admin: Device configuration saved: ${JSON.stringify(config)}`);
+      const token = store.get("authToken") || null;
 
+      const BACKEND_URL =
+        env === "staging"
+          ? process.env.STAGING_BACKEND_URL
+          : process.env.PROD_BACKEND_URL;
+      const res = await addKioskSystemConfig({
+        BACKEND_URL,
+        body: config,
+        token,
+      });
+      // const res = await getKioskConfig({ BACKEND_URL, token });
+      console.log({ res });
       return { success: true };
     } catch (error) {
       log.error(`Admin: Error saving device configuration: ${error.message}`);
@@ -568,7 +592,21 @@ function registerIpcHandlers() {
 
       // Save to store
       store.set("systemConfiguration", config);
+
       log.info(`Admin: System configuration saved: ${JSON.stringify(config)}`);
+      const token = store.get("authToken") || null;
+
+      const BACKEND_URL =
+        env === "staging"
+          ? process.env.STAGING_BACKEND_URL
+          : process.env.PROD_BACKEND_URL;
+      const res = await addKioskSystemConfig({
+        BACKEND_URL,
+        body: config,
+        token,
+        type: "system",
+      });
+      console.log({ res });
 
       return { success: true };
     } catch (error) {
@@ -580,6 +618,7 @@ function registerIpcHandlers() {
   ipcMain.handle("admin-get-system-configuration", () => {
     try {
       const config = store.get("systemConfiguration") || null;
+
       log.info(`Admin: System configuration requested`);
       return config;
     } catch (error) {
@@ -647,11 +686,6 @@ async function restartLogger(newLogPath) {
   }
 }
 
-const deviceConfig = {
-  videoConference: "abcd-camera-device-id", // deviceId of camera
-  stethoscopeMic: "xyz-mic-device-id", // deviceId of microphone
-};
-
 ipcMain.on("auth-token", (event, token) => {
   console.log("🔑 Token received from React:", token);
   authToken = token;
@@ -661,7 +695,14 @@ ipcMain.on("auth-token", (event, token) => {
   store.set("authToken", token);
 });
 
-ipcMain.handle("get-device-config", () => {
+ipcMain.handle("get-device-config", async () => {
+  const system = store.get("systemConfiguration") || null;
+  const device = store.get("deviceConfiguration") || null;
+
+  const deviceConfig = {
+    device, // deviceId of camera
+    system, // deviceId of microphone
+  };
   return deviceConfig;
 });
 
