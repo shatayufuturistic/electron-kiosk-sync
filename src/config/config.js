@@ -65,6 +65,8 @@ if (!process.env.ACCESS_KEY_ID || !process.env.SECRET_ACCESS_KEY) {
 // Load upload queue
 let uploadQueue = store.get("uploadQueue") || [];
 log.info(`Loaded upload queue: ${JSON.stringify(uploadQueue)}`);
+console.log("key", process.env.ACCESS_KEY_ID);
+console.log("secret", process.env.SECRET_ACCESS_KEY);
 
 // Initialize S3 client
 const s3 = new AWS.S3({
@@ -96,15 +98,15 @@ function removeFromUploadQueue(filePath) {
 function checkInternetConnection() {
   return new Promise((resolve, reject) => {
     axios
-      .get(`https://${BUCKET_NAME}.s3.ap-south-1.amazonaws.com`, {
+      .get(`https://www.google.com`, {
         timeout: 5000,
       })
       .then(() => {
         log.info("Internet connection to S3 available.");
         resolve();
       })
-      .catch(() => {
-        log.error("No internet connection to S3.");
+      .catch((err) => {
+        log.error("No internet connection to S3.", err.message);
         reject("No internet connection");
       });
   });
@@ -146,7 +148,7 @@ const waitForFileToStabilize = (filePath) => {
 };
 
 // Upload to S3
-const uploadFileToS3 = (filePath, callback = () => {}) => {
+const uploadFileToS3 = (filePath, callback = () => { }) => {
   log.info(`Uploading file to S3: ${filePath}`);
   let fileStream;
   try {
