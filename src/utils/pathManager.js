@@ -10,7 +10,7 @@ const log = require("electron-log");
 
 // Default folder structure
 const DEFAULT_FOLDERS = {
-  syncPath: "KHG\\Report",
+  syncPath: "KHG\\Reports",
   logPath: "Sync\\Log",
 };
 

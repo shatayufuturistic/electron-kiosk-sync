@@ -102,7 +102,7 @@
   <div class="progress-container">
     <div id="progressBar"></div>
     <p id="progressText">0%</p>
-      
+
   </div>
 
   <button id="quitButton" class="btn" onclick="quitApp()">
@@ -123,9 +123,15 @@
 
 
     window.electron.onUpdateDownloaded(() => {
+      const progressBar = document.getElementById('progressBar');
+      const progressText = document.getElementById('progressText');
+
+      // Ensure progress shows 100% when downloaded
+      progressBar.style.width = "100%";
+      progressText.innerText = "100%";
+
       document.getElementById('statusText').innerText = "Download completed. Click the button below to relaunch.";
       document.getElementById('quitButton').style.display = "flex";
-
     });
 
     function quitApp() {

@@ -167,6 +167,7 @@ function createUpdateWindow() {
     modal: true,
     parent: mainWindow,
     show: false,
+    frame: false,
     webPreferences: {
       contextIsolation: true,
       preload: preloadPath,
@@ -274,6 +275,7 @@ function setupAutoUpdater() {
 
   autoUpdater.on("update-downloaded", (info) => {
     log.info(`Update downloaded. Version: ${info.version}`);
+    updateWindow?.webContents.send("download-progress", "100");
     updateWindow?.webContents.send("update-downloaded");
   });
 
