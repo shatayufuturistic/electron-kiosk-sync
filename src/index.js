@@ -630,7 +630,44 @@ function registerIpcHandlers() {
   });
 }
 
-app.whenReady().then(() => {
+
+// Function to reset system configuration on startup
+async function resetSystemConfiguration() {
+  log.info("Resetting system configuration...");
+
+  try {
+
+    // 2. Clear system config to remove legacy/user defined configs
+    store.delete("systemConfiguration");
+
+    // 3. Reset Sync Path
+    const bestSyncPath = getBestAvailablePath(null, "syncPath");
+    if (bestSyncPath) {
+      store.set("syncPath", bestSyncPath);
+      log.info(`Reset sync path to: ${bestSyncPath}`);
+      await restartFileWatcher(bestSyncPath);
+    } else {
+      log.warn("No suitable sync path found during reset.");
+    }
+
+    // 4. Reset Log Path
+    const bestLogPath = getBestAvailablePath(null, "logPath");
+    if (bestLogPath) {
+      store.set("logPath", bestLogPath);
+      log.info(`Reset log path to: ${bestLogPath}`);
+      await restartLogger(bestLogPath);
+    } else {
+      log.warn("No suitable log path found during reset.");
+    }
+
+    log.info("System configuration reset complete.");
+  } catch (error) {
+    log.error(`Error resetting system configuration: ${error.message}`);
+  }
+}
+
+app.whenReady().then(async () => {
+  await resetSystemConfiguration();
   initializeLogger();
   createLoaderWindow();
   createMainWindow();

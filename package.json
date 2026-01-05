@@ -1,6 +1,6 @@
 {
   "name": "shatayu",
-  "version": "1.0.6",
+  "version": "1.0.8",
   "description": "Shatayu syncing software",
   "main": "src/index.js",
   "build": {

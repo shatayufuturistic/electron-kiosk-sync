@@ -68,16 +68,23 @@ log.info(`Loaded upload queue: ${JSON.stringify(uploadQueue)}`);
 console.log("key", process.env.ACCESS_KEY_ID);
 console.log("secret", process.env.SECRET_ACCESS_KEY);
 
-// Initialize S3 client
+// Initialize S3 client with optimized settings
 const s3 = new AWS.S3({
   accessKeyId: process.env.ACCESS_KEY_ID,
   secretAccessKey: process.env.SECRET_ACCESS_KEY,
   region: "ap-south-1",
-  httpOptions: { timeout: 60000, connectTimeout: 5000 },
-  maxRetries: 3,
-  partSize: 10 * 1024 * 1024,
+  httpOptions: {
+    timeout: 120000, // Increased to 2 minutes for large files
+    connectTimeout: 10000 // Increased connection timeout
+  },
+  maxRetries: 5, // Increased retries for better reliability
+  retryDelayOptions: {
+    base: 300 // Exponential backoff starting at 300ms
+  },
+  partSize: 20 * 1024 * 1024, // Increased to 20MB for faster uploads
+  queueSize: 4, // Allow 4 concurrent part uploads
 });
-log.info("AWS S3 client initialized.");
+log.info("AWS S3 client initialized with optimized settings.");
 
 // Utility functions
 function addToUploadQueue(filePath) {
@@ -99,7 +106,7 @@ function checkInternetConnection() {
   return new Promise((resolve, reject) => {
     axios
       .get(`https://www.google.com`, {
-        timeout: 5000,
+        timeout: 3000, // Reduced from 5s to 3s for faster failure detection
       })
       .then(() => {
         log.info("Internet connection to S3 available.");
@@ -118,8 +125,8 @@ const waitForFileToStabilize = (filePath) => {
   log.info(`Checking file stability: ${filePath}`);
   let previousSize = 0;
   let stableCounter = 0;
-  const maxStableCount = 10;
-  const checkInterval = 1000;
+  const maxStableCount = 3; // Reduced from 10 to 3 for faster processing
+  const checkInterval = 1000; // Keep 1 second interval
 
   const checkFile = setInterval(() => {
     try {
@@ -147,37 +154,59 @@ const waitForFileToStabilize = (filePath) => {
   stabilityIntervals.add(checkFile);
 };
 
-// Upload to S3
-const uploadFileToS3 = (filePath, callback = () => { }) => {
-  log.info(`Uploading file to S3: ${filePath}`);
-  let fileStream;
+// Upload to S3 with retry mechanism
+const uploadFileToS3 = async (filePath, retryCount = 0, maxRetries = 3) => {
+  const retryDelay = Math.min(1000 * Math.pow(2, retryCount), 10000); // Exponential backoff, max 10s
+
+  log.info(`Uploading file to S3 (attempt ${retryCount + 1}/${maxRetries + 1}): ${filePath}`);
+
   try {
-    fileStream = fs.createReadStream(filePath);
-  } catch (error) {
-    log.error(`Error reading file: ${filePath}, Error: ${error.message}`);
-    callback();
-    return;
-  }
-
-  const params = {
-    Bucket: BUCKET_NAME,
-    Key: path.basename(filePath),
-    Body: fileStream,
-  };
-
-  s3.upload(params, (err, data) => {
-    if (err) {
-      log.error(
-        `Error uploading file to S3: ${filePath}, Error: ${err.message}`
-      );
-      addToUploadQueue(filePath);
-      callback();
+    // Check if file exists and is accessible
+    if (!fs.existsSync(filePath)) {
+      log.error(`File not found: ${filePath}`);
+      removeFromUploadQueue(filePath);
       return;
     }
 
+    // Check if file is locked or in use
+    try {
+      const fd = fs.openSync(filePath, 'r+');
+      fs.closeSync(fd);
+    } catch (lockError) {
+      log.warn(`File is locked or in use: ${filePath}. Will retry.`);
+      if (retryCount < maxRetries) {
+        setTimeout(() => uploadFileToS3(filePath, retryCount + 1, maxRetries), retryDelay);
+        return;
+      }
+      throw new Error(`File locked after ${maxRetries + 1} attempts`);
+    }
+
+    const fileStream = fs.createReadStream(filePath);
+    const fileStats = fs.statSync(filePath);
+    const fileSize = fileStats.size;
+
+    const params = {
+      Bucket: BUCKET_NAME,
+      Key: path.basename(filePath),
+      Body: fileStream,
+      ContentLength: fileSize,
+    };
+
+    // Upload with progress tracking
+    const upload = s3.upload(params);
+
+    upload.on('httpUploadProgress', (progress) => {
+      const percentage = Math.round((progress.loaded / progress.total) * 100);
+      if (percentage % 25 === 0) { // Log at 25%, 50%, 75%, 100%
+        log.info(`Upload progress for ${path.basename(filePath)}: ${percentage}%`);
+      }
+    });
+
+    const data = await upload.promise();
     log.info(`File uploaded successfully to S3: ${data.Location}`);
     removeFromUploadQueue(filePath);
 
+    // Send to backend
     const payload = {
       fileURL: `https://${BUCKET_NAME}.s3.ap-south-1.amazonaws.com/${data.Key}`,
       key: parseInt(API_KEY),
@@ -186,43 +215,78 @@ const uploadFileToS3 = (filePath, callback = () => { }) => {
 
     log.info(`Sending file URL to backend: ${JSON.stringify(payload)}`);
 
-    axios
-      .patch(BACKEND_URL + "/addTestReportToPatient", payload)
-      .then((response) => {
-        log.info(
-          `File URL posted successfully: ${JSON.stringify(response?.data)}`
-        );
-      })
-      .catch((error) => {
-        log.error(
-          `Error posting file URL: ${JSON.stringify(error?.response?.data)}`
-        );
-      });
+    try {
+      const response = await axios.patch(
+        BACKEND_URL + "/addTestReportToPatient",
+        payload,
+        { timeout: 30000 } // 30 second timeout
+      );
 
-    callback();
-  });
+      log.info(`File URL posted successfully: ${JSON.stringify(response?.data)}`);
+
+      // Delete the local file after successful upload and backend notification
+      try {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          log.info(`Local file deleted successfully: ${filePath}`);
+        } else {
+          log.warn(`File not found for deletion: ${filePath}`);
+        }
+      } catch (deleteError) {
+        log.error(`Error deleting local file: ${filePath}, Error: ${deleteError.message}`);
+      }
+    } catch (backendError) {
+      log.error(`Error posting file URL: ${JSON.stringify(backendError?.response?.data || backendError.message)}`);
+      log.warn(`Local file NOT deleted due to backend error: ${filePath}`);
+
+      // Retry backend call if it failed
+      if (retryCount < maxRetries) {
+        log.info(`Retrying backend notification in ${retryDelay}ms...`);
+        setTimeout(() => uploadFileToS3(filePath, retryCount + 1, maxRetries), retryDelay);
+      }
+    }
+
+  } catch (error) {
+    log.error(`Error uploading file to S3: ${filePath}, Error: ${error.message}`);
+
+    // Retry upload if not at max retries
+    if (retryCount < maxRetries) {
+      log.info(`Retrying upload in ${retryDelay}ms (attempt ${retryCount + 2}/${maxRetries + 1})...`);
+      addToUploadQueue(filePath);
+      setTimeout(() => uploadFileToS3(filePath, retryCount + 1, maxRetries), retryDelay);
+    } else {
+      log.error(`Failed to upload file after ${maxRetries + 1} attempts: ${filePath}`);
+      addToUploadQueue(filePath); // Keep in queue for next processing cycle
+    }
+  }
 };
 
-// Process upload queue
+// Process upload queue with parallel processing
 async function processUploadQueue() {
   if (uploadQueue.length === 0) {
-    //log.info("Upload queue is empty. Nothing to process.");
     return;
   }
 
-  log.info(`Processing upload queue: ${JSON.stringify(uploadQueue)}`);
+  log.info(`Processing upload queue with ${uploadQueue.length} file(s)`);
 
   try {
     await checkInternetConnection();
-    for (const filePath of uploadQueue) {
-      await new Promise((resolve) => uploadFileToS3(filePath, resolve));
+
+    // Process up to 3 files in parallel for faster throughput
+    const concurrentUploads = 3;
+    const filesToProcess = [...uploadQueue]; // Create a copy to avoid modification during iteration
+
+    for (let i = 0; i < filesToProcess.length; i += concurrentUploads) {
+      const batch = filesToProcess.slice(i, i + concurrentUploads);
+      await Promise.allSettled(batch.map(filePath => uploadFileToS3(filePath)));
     }
-  } catch {
+  } catch (error) {
     log.info("Internet not available; will retry queued files later.");
   }
 }
 
-setInterval(processUploadQueue, 10000);
+// Reduced interval from 10s to 5s for faster queue processing
+setInterval(processUploadQueue, 5000);
 
 // File watcher
 let watcher;
@@ -273,7 +337,10 @@ function setupLocalFileWatcher(customPath = null) {
     persistent: true,
     ignoreInitial: true,
     ignored: ["**/*.*", "!**/*.{png,jpg,jpeg,pdf,txt}"],
-    awaitWriteFinish: { stabilityThreshold: 5000, pollInterval: 1000 },
+    awaitWriteFinish: {
+      stabilityThreshold: 2000, // Reduced from 5s to 2s for faster detection
+      pollInterval: 500 // Reduced from 1s to 500ms for more responsive checking
+    },
   });
 
   watcher
